@@ -14,8 +14,9 @@ interface TaskKanbanColumnProps {
     title: string;
     tasks: TaskItem[];
     color: "gray" | "blue" | "violet" | "emerald";
-    onEdit: (task: TaskItem) => void;
-    onDelete: (task: TaskItem) => void;
+    onEdit?: (task: TaskItem) => void;
+    onDelete?: (task: TaskItem) => void;
+    taskHref?: (task: TaskItem) => string;
 }
 
 const COLUMN_STYLES = {
@@ -73,11 +74,13 @@ function getSchedule(task: TaskItem) {
 function TaskCard({
     task,
     onEdit,
-    onDelete
+    onDelete,
+    taskHref
 }: {
     task: TaskItem;
-    onEdit: () => void;
-    onDelete: () => void;
+    onEdit?: () => void;
+    onDelete?: () => void;
+    taskHref?: string;
 }) {
     const responsible = [
         task.assignedUserFirstName,
@@ -93,14 +96,15 @@ function TaskCard({
                         {task.clientCompanyName ?? "Sin empresa cliente"}
                     </p>
                     <Link
-                        href={`/subtasks?subProjectId=${task.subProjectId}&taskId=${task.id}`}
+                        href={taskHref ?? `/subtasks?subProjectId=${task.subProjectId}&taskId=${task.id}`}
                         className="mt-1 block break-words text-sm font-semibold leading-5 text-gray-950 hover:text-blue-700"
                     >
                         {task.title}
                     </Link>
                 </div>
 
-                <div className="flex shrink-0 items-center gap-0.5">
+                {(onEdit || onDelete) && <div className="flex shrink-0 items-center gap-0.5">
+                    {onEdit &&
                     <button
                         type="button"
                         title="Editar tarea"
@@ -109,8 +113,8 @@ function TaskCard({
                         className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-800"
                     >
                         <Pencil size={15} />
-                    </button>
-                    <button
+                    </button>}
+                    {onDelete && <button
                         type="button"
                         title="Eliminar tarea"
                         aria-label={`Eliminar ${task.title}`}
@@ -118,8 +122,8 @@ function TaskCard({
                         className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
                     >
                         <Trash2 size={15} />
-                    </button>
-                </div>
+                    </button>}
+                </div>}
             </div>
 
             <p className="mt-2 break-words text-xs leading-5 text-gray-500">
@@ -169,12 +173,13 @@ export function TaskKanbanColumn({
     tasks,
     color,
     onEdit,
-    onDelete
+    onDelete,
+    taskHref
 }: TaskKanbanColumnProps) {
     const styles = COLUMN_STYLES[color];
 
     return (
-        <section className="flex h-[calc(100vh-16rem)] min-h-[520px] w-[310px] shrink-0 flex-col overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
+        <section className="flex h-[calc(100vh-16rem)] min-h-[520px] min-w-[260px] flex-1 flex-col overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
             <header className={`flex h-12 shrink-0 items-center gap-2 border-b-2 bg-white px-4 ${styles.border}`}>
                 <span className={`size-2.5 rounded-full ${styles.dot}`} />
                 <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
@@ -188,8 +193,9 @@ export function TaskKanbanColumn({
                     <TaskCard
                         key={task.id}
                         task={task}
-                        onEdit={() => onEdit(task)}
-                        onDelete={() => onDelete(task)}
+                        onEdit={onEdit ? () => onEdit(task) : undefined}
+                        onDelete={onDelete ? () => onDelete(task) : undefined}
+                        taskHref={taskHref?.(task)}
                     />
                 ))}
 

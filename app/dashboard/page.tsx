@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, RefreshCw } from "lucide-react";
 import { RequireAuth } from "@/components/auth/RequireAuth";
+import { useAuth } from "@/context/AuthContext";
+import { PROJECT_MANAGER_ROLES } from "@/lib/roles";
 import { ManagerDashboard } from "@/components/dashboard/ManagerDashboard";
 import { AppShell } from "@/components/layout/AppShell";
 import {
@@ -18,11 +20,17 @@ import {
     dashboardService
 } from "@/services/dashboard.service";
 import { departmentsService } from "@/services/departments.service";
+import { departmentUsersService } from "@/services/department-users.service";
 import { projectsService } from "@/services/projects.service";
 import { subProjectsService } from "@/services/subprojects.service";
+import { tasksService } from "@/services/tasks.service";
 import { usersService } from "@/services/users.service";
 import { PagedResult } from "@/types/common.types";
-import { DashboardData } from "@/types/dashboard.types";
+import { ClientHealthItem, DashboardData } from "@/types/dashboard.types";
+import { DepartmentUser } from "@/types/department-user.types";
+import { Project } from "@/types/project.types";
+import { SubProject } from "@/types/subproject.types";
+import { TaskItem } from "@/types/task.types";
 
 const EMPTY_CATALOGS: DashboardFilterCatalogs = {
     clients: [],
@@ -52,7 +60,121 @@ async function loadAllPages<T>(
     ];
 }
 
+async function getDashboardWithTemporalFallback(
+    query: DashboardQuery = {}
+): Promise<DashboardData> {
+    try {
+        return await dashboardService.get(query);
+    } catch (error) {
+        const hasTemporalFilter = query.year !== undefined || query.month !== undefined;
+
+        if (!(error instanceof ApiError) || error.status < 500 || !hasTemporalFilter) {
+            throw error;
+        }
+
+        return dashboardService.get({
+            ...query,
+            year: undefined,
+            month: undefined
+        });
+    }
+}
+
+function buildDirectorCatalogs(
+    projects: Project[],
+    subProjects: SubProject[],
+    tasks: TaskItem[],
+    memberships: DepartmentUser[]
+): DashboardFilterCatalogs {
+    const accessibleProjectIds = new Set(
+        subProjects.map((subProject) => subProject.projectId)
+    );
+    const scopedProjects = projects.filter(
+        (project) => accessibleProjectIds.has(project.id)
+    );
+    const clients = new Map<string, DashboardFilterCatalogs["clients"][number]>();
+    const departments = new Map<string, DashboardFilterCatalogs["departments"][number]>();
+    const users = new Map<string, DashboardFilterCatalogs["users"][number]>();
+
+    scopedProjects.forEach((project) => {
+        if (project.clientCompanyId && project.clientCompanyName) {
+            clients.set(project.clientCompanyId, {
+                id: project.clientCompanyId,
+                name: project.clientCompanyName,
+                description: null,
+                email: null,
+                phone: null
+            });
+        }
+    });
+
+    subProjects.forEach((subProject) => {
+        departments.set(subProject.departmentId, {
+            id: subProject.departmentId,
+            name: subProject.departmentName,
+            description: null
+        });
+
+        if (subProject.assignedUserId) {
+            users.set(subProject.assignedUserId, {
+                id: subProject.assignedUserId,
+                firstName: subProject.assignedUserFirstName ?? "Sin",
+                lastName: subProject.assignedUserLastName ?? "responsable",
+                phone: null,
+                email: null,
+                roleId: "",
+                roleName: "Integrante",
+                clientCompanyId: null,
+                clientCompanyName: null
+            });
+        }
+    });
+
+    tasks.forEach((task) => {
+        if (task.assignedUserId) {
+            users.set(task.assignedUserId, {
+                id: task.assignedUserId,
+                firstName: task.assignedUserFirstName ?? "Sin",
+                lastName: task.assignedUserLastName ?? "responsable",
+                phone: null,
+                email: null,
+                roleId: "",
+                roleName: "Integrante",
+                clientCompanyId: null,
+                clientCompanyName: null
+            });
+        }
+    });
+
+    const directedDepartmentIds = new Set(departments.keys());
+    memberships.forEach((membership) => {
+        if (directedDepartmentIds.has(membership.departmentId)) {
+            users.set(membership.userId, {
+                id: membership.userId,
+                firstName: membership.userFirstName,
+                lastName: membership.userLastName,
+                phone: null,
+                email: null,
+                roleId: "",
+                roleName: membership.userRoleName ?? "Integrante",
+                clientCompanyId: null,
+                clientCompanyName: null
+            });
+        }
+    });
+
+    return {
+        clients: Array.from(clients.values()),
+        projects: scopedProjects,
+        subProjects,
+        departments: Array.from(departments.values()),
+        users: Array.from(users.values())
+    };
+}
+
 export default function DashboardPage() {
+    const { user } = useAuth();
+    const roleName = user?.roleName;
     const [dashboard, setDashboard] = useState<DashboardData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -68,7 +190,7 @@ export default function DashboardPage() {
 
         try {
             const [year, month] = new Date().toISOString().slice(0, 7).split("-");
-            setDashboard(await dashboardService.get({ year, month }));
+            setDashboard(await getDashboardWithTemporalFallback({ year, month }));
         } catch (loadError) {
             setError(
                 loadError instanceof ApiError
@@ -85,6 +207,26 @@ export default function DashboardPage() {
         setCatalogError(null);
 
         try {
+            if (roleName === "Director") {
+                const [projects, subProjects, tasks, memberships] = await Promise.all([
+                    loadAllPages((page, pageSize) =>
+                        projectsService.getAll({ page, pageSize })
+                    ),
+                    loadAllPages((page, pageSize) =>
+                        subProjectsService.getAll({ page, pageSize })
+                    ),
+                    loadAllPages((page, pageSize) =>
+                        tasksService.getAll({ page, pageSize })
+                    ),
+                    loadAllPages((page, pageSize) =>
+                        departmentUsersService.getAll({ page, pageSize })
+                    )
+                ]);
+
+                setCatalogs(buildDirectorCatalogs(projects, subProjects, tasks, memberships));
+                return;
+            }
+
             const [clients, projects, subProjects, departments, users] =
                 await Promise.all([
                     loadAllPages((page, pageSize) =>
@@ -122,7 +264,7 @@ export default function DashboardPage() {
         } finally {
             setIsCatalogLoading(false);
         }
-    }, []);
+    }, [roleName]);
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -131,7 +273,7 @@ export default function DashboardPage() {
     }, [loadCatalogs, loadDashboard]);
 
     return (
-        <RequireAuth>
+        <RequireAuth allowedRoles={PROJECT_MANAGER_ROLES}>
             <AppShell>
                 {isLoading ? (
                     <DashboardSkeleton />
@@ -184,6 +326,12 @@ function toDashboardQuery(filters: DashboardFilters): DashboardQuery {
     };
 }
 
+function toClientHealthQuery(filters: DashboardFilters): DashboardQuery {
+    const [year, month] = filters.period.split("-");
+
+    return { year, month };
+}
+
 function FilteredDashboard({
     initialData,
     onRefreshCatalogs
@@ -193,6 +341,9 @@ function FilteredDashboard({
 }) {
     const { filters } = useDashboardFilters();
     const [data, setData] = useState(initialData);
+    const [clientHealth, setClientHealth] = useState<ClientHealthItem[]>(
+        initialData.clientHealth ?? []
+    );
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [refreshError, setRefreshError] = useState<string | null>(null);
     const isInitialRender = useRef(true);
@@ -206,17 +357,22 @@ function FilteredDashboard({
         setRefreshError(null);
 
         try {
-            const dashboardRequest = dashboardService.get(
+            const dashboardRequest = getDashboardWithTemporalFallback(
                 toDashboardQuery(filters)
             );
+            const clientHealthRequest = getDashboardWithTemporalFallback(
+                toClientHealthQuery(filters)
+            );
 
-            const [nextDashboard] = await Promise.all([
+            const [nextDashboard, allClientsDashboard] = await Promise.all([
                 dashboardRequest,
+                clientHealthRequest,
                 refreshCatalogs ? onRefreshCatalogs() : Promise.resolve()
             ]);
 
             if (currentRequestId === requestId.current) {
                 setData(nextDashboard);
+                setClientHealth(allClientsDashboard.clientHealth ?? []);
             }
         } catch (loadError) {
             if (currentRequestId === requestId.current) {
@@ -245,6 +401,7 @@ function FilteredDashboard({
     return (
         <ManagerDashboard
             data={data}
+            clientHealth={clientHealth}
             isRefreshing={isRefreshing}
             refreshError={refreshError}
             onRefresh={() => void loadFilteredDashboard(true)}

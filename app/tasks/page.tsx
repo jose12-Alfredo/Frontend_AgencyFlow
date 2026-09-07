@@ -9,8 +9,11 @@ import {
     useState
 } from "react";
 import { useSearchParams } from "next/navigation";
-import { LayoutGrid, List, Plus, RefreshCw } from "lucide-react";
+import { CircleAlert, ClipboardList, LayoutGrid, List, Plus, RefreshCw, Search } from "lucide-react";
 import { RequireAuth } from "@/components/auth/RequireAuth";
+import { PROJECT_MANAGER_ROLES } from "@/lib/roles";
+import { isAdministrator } from "@/lib/roles";
+import { useAuth } from "@/context/AuthContext";
 import { AppShell } from "@/components/layout/AppShell";
 import { TaskDeleteDialog } from "@/components/tasks/TaskDeleteDialog";
 import { TaskFormModal } from "@/components/tasks/TaskFormModal";
@@ -22,7 +25,12 @@ import { projectsService } from "@/services/projects.service";
 import { subProjectsService } from "@/services/subprojects.service";
 import { tasksService } from "@/services/tasks.service";
 import { usersService } from "@/services/users.service";
-import { getAssignableUsers } from "@/lib/assignment";
+import { departmentUsersService } from "@/services/department-users.service";
+import { loadAllPages } from "@/services/pagination";
+import {
+    getAssignableUsers,
+    membershipsToAssignableUsers
+} from "@/lib/assignment";
 import { ClientCompany } from "@/types/client-company.types";
 import { Project } from "@/types/project.types";
 import { SubProject } from "@/types/subproject.types";
@@ -56,6 +64,27 @@ const TASK_COLUMNS = [
     }
 ];
 
+function TaskKpi({ title, count }: { title: string; count: number }) {
+    const tones: Record<string, string> = {
+        Pendiente: "bg-slate-50 text-slate-700",
+        "En proceso": "bg-blue-50 text-blue-700",
+        "En revisión": "bg-violet-50 text-violet-700",
+        Completada: "bg-emerald-50 text-emerald-700"
+    };
+
+    return (
+        <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-4 sm:border-r xl:border-b-0">
+            <span className={`flex size-9 items-center justify-center rounded-lg ${tones[title] ?? "bg-gray-50 text-gray-700"}`}>
+                <ClipboardList size={18} />
+            </span>
+            <div>
+                <p className="text-2xl font-semibold text-gray-950">{count}</p>
+                <p className="text-xs font-medium text-gray-500">{title}</p>
+            </div>
+        </div>
+    );
+}
+
 export default function TasksPage() {
     return (
         <Suspense fallback={<div className="p-6 text-sm text-gray-500">Cargando tareas...</div>}>
@@ -65,6 +94,8 @@ export default function TasksPage() {
 }
 
 function TasksContent() {
+    const { user } = useAuth();
+    const canAdminister = isAdministrator(user?.roleName);
     const searchParams = useSearchParams();
     const initialized = useRef(false);
     const [clients, setClients] = useState<ClientCompany[]>([]);
@@ -75,6 +106,7 @@ function TasksContent() {
     const [clientCompanyId, setClientCompanyId] = useState(ALL);
     const [projectId, setProjectId] = useState(ALL);
     const [subProjectId, setSubProjectId] = useState(ALL);
+    const [search, setSearch] = useState("");
     const [viewMode, setViewMode] = useState<"board" | "list">("board");
     const [isCatalogLoading, setIsCatalogLoading] = useState(true);
     const [isTasksLoading, setIsTasksLoading] = useState(false);
@@ -88,18 +120,45 @@ function TasksContent() {
         setError(null);
 
         try {
-            const [clientsResult, projectsResult, subProjectsResult, usersResult] =
+            const [administratorClients, loadedProjects, visibleSubProjects] =
                 await Promise.all([
-                    clientCompaniesService.getAll({ page: 1, pageSize: 100 }),
-                    projectsService.getAll({ page: 1, pageSize: 100 }),
-                    subProjectsService.getAll({ page: 1, pageSize: 100 }),
-                    usersService.getAll({ page: 1, pageSize: 100 })
+                    canAdminister
+                        ? loadAllPages((page, pageSize) => clientCompaniesService.getAll({ page, pageSize }))
+                        : Promise.resolve([] as ClientCompany[]),
+                    loadAllPages((page, pageSize) => projectsService.getAll({ page, pageSize })),
+                    loadAllPages((page, pageSize) => subProjectsService.getAll({ page, pageSize }))
                 ]);
 
-            setClients(clientsResult.items);
-            setProjects(projectsResult.items);
-            setSubProjects(subProjectsResult.items);
-            setUsers(usersResult.items);
+            const loadedUsers: User[] = canAdminister
+                ? await loadAllPages((page, pageSize) => usersService.getAll({ page, pageSize }))
+                : membershipsToAssignableUsers(
+                    await loadAllPages((page, pageSize) =>
+                        departmentUsersService.getAll({ page, pageSize })
+                    )
+                );
+            const visibleProjectIds = new Set(
+                visibleSubProjects.map((subProject) => subProject.projectId)
+            );
+            const visibleProjects = loadedProjects.filter(
+                (project) => visibleProjectIds.has(project.id)
+            );
+            const directorClients = Array.from(new Map(
+                visibleProjects
+                    .filter((project) => project.clientCompanyId && project.clientCompanyName)
+                    .map((project) => [project.clientCompanyId!, {
+                        id: project.clientCompanyId!,
+                        name: project.clientCompanyName!,
+                        description: null,
+                        email: null,
+                        phone: null
+                    } as ClientCompany])
+            ).values());
+            const loadedClients = canAdminister ? administratorClients : directorClients;
+
+            setClients(loadedClients);
+            setProjects(visibleProjects);
+            setSubProjects(visibleSubProjects);
+            setUsers(loadedUsers);
 
             if (!initialized.current) {
                 const requestedProjectId = searchParams.get("projectId") ?? ALL;
@@ -107,10 +166,10 @@ function TasksContent() {
                     searchParams.get("subProjectId") ?? ALL;
                 const requestedClientId =
                     searchParams.get("clientCompanyId") ?? ALL;
-                const requestedSubProject = subProjectsResult.items.find(
+                const requestedSubProject = visibleSubProjects.find(
                     (subProject) => subProject.id === requestedSubProjectId
                 );
-                const requestedProject = projectsResult.items.find(
+                const requestedProject = visibleProjects.find(
                     (project) =>
                         project.id ===
                         (requestedProjectId === ALL
@@ -119,7 +178,7 @@ function TasksContent() {
                 );
                 const validRequestedClient =
                     requestedClientId === ALL ||
-                    clientsResult.items.some(
+                    loadedClients.some(
                         (client) => client.id === requestedClientId
                     );
                 const initialClientId = validRequestedClient
@@ -131,7 +190,7 @@ function TasksContent() {
                 )
                     ? requestedProject
                     : null;
-                const requestedSubProjectExists = subProjectsResult.items.some(
+                const requestedSubProjectExists = visibleSubProjects.some(
                     (subProject) =>
                         subProject.id === requestedSubProjectId &&
                         subProject.projectId === initialProject?.id
@@ -153,7 +212,7 @@ function TasksContent() {
         } finally {
             setIsCatalogLoading(false);
         }
-    }, [searchParams]);
+    }, [canAdminister, searchParams]);
 
     const loadTasks = useCallback(async () => {
         if (!initialized.current) {
@@ -186,10 +245,12 @@ function TasksContent() {
                 )
                 : [];
 
-            setTasks([
+            const loadedTasks = [
                 ...firstPage.items,
                 ...remainingPages.flatMap((page) => page.items)
-            ]);
+            ];
+            const allowedSubProjectIds = new Set(subProjects.map((subProject) => subProject.id));
+            setTasks(canAdminister ? loadedTasks : loadedTasks.filter((task) => allowedSubProjectIds.has(task.subProjectId)));
         } catch (loadError) {
             setError(
                 loadError instanceof ApiError
@@ -199,7 +260,7 @@ function TasksContent() {
         } finally {
             setIsTasksLoading(false);
         }
-    }, [clientCompanyId, projectId, subProjectId]);
+    }, [canAdminister, clientCompanyId, projectId, subProjectId, subProjects]);
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -272,9 +333,48 @@ function TasksContent() {
     }
 
     const isLoading = isCatalogLoading || isTasksLoading;
+    const taskKpis = useMemo(
+        () => TASK_COLUMNS.map((column) => ({
+            title: column.title,
+            count: tasks.filter((task) => column.matches(task.status)).length
+        })),
+        [tasks]
+    );
+    const overdueTaskCount = useMemo(() => {
+        const today = new Date().toISOString().slice(0, 10);
+
+        return tasks.filter((task) =>
+            Boolean(
+                task.endDate &&
+                task.endDate < today &&
+                task.status !== "Completado" &&
+                task.status !== "Completada"
+            )
+        ).length;
+    }, [tasks]);
+    const filteredTasks = useMemo(() => {
+        const term = search.trim().toLowerCase();
+
+        if (!term) {
+            return tasks;
+        }
+
+        return tasks.filter((task) => [
+            task.title,
+            task.detail,
+            task.clientCompanyName,
+            task.projectTitle,
+            task.subProjectTitle,
+            task.assignedUserFirstName,
+            task.assignedUserLastName,
+            [task.assignedUserFirstName, task.assignedUserLastName]
+                .filter(Boolean)
+                .join(" ")
+        ].some((value) => value?.toLowerCase().includes(term)));
+    }, [search, tasks]);
 
     return (
-        <RequireAuth>
+        <RequireAuth allowedRoles={PROJECT_MANAGER_ROLES}>
             <AppShell>
                 <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
                     <div>
@@ -341,7 +441,22 @@ function TasksContent() {
                     </div>
                 )}
 
-                <section className="mb-5 border-y border-gray-200 bg-white px-4 py-4 sm:px-5">
+                <section className="mb-5 grid overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm sm:grid-cols-2 xl:grid-cols-5">
+                    {taskKpis.map((kpi) => (
+                        <TaskKpi key={kpi.title} title={kpi.title} count={kpi.count} />
+                    ))}
+                    <div className="flex items-center gap-3 border-t border-gray-100 px-5 py-4 sm:col-span-2 xl:col-span-1 xl:border-l xl:border-t-0">
+                        <span className="flex size-9 items-center justify-center rounded-lg bg-red-50 text-red-700">
+                            <CircleAlert size={18} />
+                        </span>
+                        <div>
+                            <p className="text-2xl font-semibold text-gray-950">{overdueTaskCount}</p>
+                            <p className="text-xs font-medium text-gray-500">Atrasadas</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section className="mb-5 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                     <div className="grid gap-4 md:grid-cols-3">
                         <div>
                             <label htmlFor="task-client" className="mb-1.5 block text-xs font-semibold uppercase text-gray-500">
@@ -398,6 +513,20 @@ function TasksContent() {
                         </div>
                     </div>
 
+                    <label className="relative mt-4 block">
+                        <span className="sr-only">Buscar tareas</span>
+                        <Search
+                            size={17}
+                            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                        />
+                        <input
+                            value={search}
+                            onChange={(event) => setSearch(event.target.value)}
+                            placeholder="Buscar tareas..."
+                            className="h-11 w-full rounded-md border border-gray-300 bg-white pl-10 pr-3 text-sm text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                        />
+                    </label>
+
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
                         <p>
                             {clientCompanyId === ALL
@@ -411,7 +540,7 @@ function TasksContent() {
                                 : visibleSubProjects.find((item) => item.id === subProjectId)?.title}
                         </p>
                         <span className="font-semibold text-gray-700">
-                            {tasks.length} {tasks.length === 1 ? "tarea" : "tareas"}
+                            {filteredTasks.length} {filteredTasks.length === 1 ? "tarea" : "tareas"}
                         </span>
                     </div>
                 </section>
@@ -427,7 +556,7 @@ function TasksContent() {
                                 key={column.title}
                                 title={column.title}
                                 color={column.color}
-                                tasks={tasks.filter((task) => column.matches(task.status))}
+                                tasks={filteredTasks.filter((task) => column.matches(task.status))}
                                 onEdit={(task) => {
                                     setTaskToEdit(task);
                                     setIsFormOpen(true);
@@ -438,7 +567,7 @@ function TasksContent() {
                     </div>
                 ) : (
                     <TaskListView
-                        tasks={tasks}
+                        tasks={filteredTasks}
                         onEdit={(task) => {
                             setTaskToEdit(task);
                             setIsFormOpen(true);

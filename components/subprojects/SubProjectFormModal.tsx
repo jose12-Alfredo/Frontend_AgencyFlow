@@ -5,6 +5,7 @@ import {
     useState
 } from "react";
 import { X } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/services/api";
 import { subProjectsService } from "@/services/subprojects.service";
 import { Department } from "@/types/department.types";
@@ -32,6 +33,8 @@ export function SubProjectFormModal({
     onClose,
     onSaved
 }: SubProjectFormModalProps) {
+    const { user } = useAuth();
+    const isDirectorCreating = subProject === null && user?.roleName === "Director";
     const [title, setTitle] = useState(subProject?.title ?? "");
     const [detail, setDetail] = useState(subProject?.detail ?? "");
     const [startDate, setStartDate] = useState(
@@ -48,7 +51,7 @@ export function SubProjectFormModal({
         subProject?.departmentId ?? ""
     );
     const [assignedUserId, setAssignedUserId] = useState(
-        subProject?.assignedUserId ?? ""
+        subProject?.assignedUserId ?? (isDirectorCreating ? user?.id ?? "" : "")
     );
     const [error, setError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
@@ -326,24 +329,38 @@ export function SubProjectFormModal({
                             htmlFor="subproject-user"
                             className="mb-2 block text-sm font-medium text-gray-700"
                         >
-                            Usuario asignado
+                            Responsable
                         </label>
 
-                        <select
-                            id="subproject-user"
-                            value={assignedUserId}
-                            onChange={(event) =>
-                                setAssignedUserId(event.target.value)
-                            }
-                            className="h-11 w-full rounded-md border border-gray-300 bg-white px-3 text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-                        >
-                            <option value="">Sin usuario asignado</option>
-                            {users.map((user) => (
-                                <option key={user.id} value={user.id}>
-                                    {user.firstName} {user.lastName}
-                                </option>
-                            ))}
-                        </select>
+                        {isDirectorCreating ? (
+                            <div>
+                                <div
+                                    id="subproject-user"
+                                    className="flex h-11 w-full items-center rounded-md border border-blue-200 bg-blue-50 px-3 text-gray-900"
+                                >
+                                    {user?.firstName} {user?.lastName} (tú)
+                                </div>
+                                <p className="mt-2 text-xs text-gray-500">
+                                    Como directora, quedarás asignada automáticamente a este subproyecto.
+                                </p>
+                            </div>
+                        ) : (
+                            <select
+                                id="subproject-user"
+                                value={assignedUserId}
+                                onChange={(event) =>
+                                    setAssignedUserId(event.target.value)
+                                }
+                                className="h-11 w-full rounded-md border border-gray-300 bg-white px-3 text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                            >
+                                <option value="">Sin usuario asignado</option>
+                                {users.map((user) => (
+                                    <option key={user.id} value={user.id}>
+                                        {user.firstName} {user.lastName}
+                                    </option>
+                                ))}
+                            </select>
+                        )}
                     </div>
 
                     <footer className="flex justify-end gap-3 border-t border-gray-200 pt-5">

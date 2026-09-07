@@ -103,6 +103,32 @@ export function SubTaskCommentsModal({
         void loadComments();
     }, [loadComments]);
 
+    const syncComments = useCallback(async () => {
+        try {
+            const result = await subTaskCommentsService.getAll(subTask.id);
+            setComments(result);
+            onCommentCountChange?.(result.length);
+        } catch {
+            // La sincronizaciÃ³n de fondo no debe interrumpir la conversaciÃ³n.
+        }
+    }, [onCommentCountChange, subTask.id]);
+
+    useEffect(() => {
+        const syncWhenVisible = () => {
+            if (document.visibilityState === "visible") {
+                void syncComments();
+            }
+        };
+        const refreshInterval = window.setInterval(syncWhenVisible, 2_000);
+
+        document.addEventListener("visibilitychange", syncWhenVisible);
+
+        return () => {
+            window.clearInterval(refreshInterval);
+            document.removeEventListener("visibilitychange", syncWhenVisible);
+        };
+    }, [syncComments]);
+
     async function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         const normalizedContent = content.trim();

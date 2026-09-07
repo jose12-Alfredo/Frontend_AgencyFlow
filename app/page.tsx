@@ -1,16 +1,52 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/services/api";
+import { getRoleHome } from "@/lib/roles";
+
+function getDefaultRoute(roleName: string): string {
+  return getRoleHome(roleName);
+}
+
+function getPostLoginRoute(
+    roleName: string,
+    returnTo: string | null
+): string {
+  if (roleName !== "Gerente" && roleName !== "SuperUsuario" && returnTo?.startsWith("/dashboard")) {
+    return getDefaultRoute(roleName);
+  }
+
+  return returnTo || getDefaultRoute(roleName);
+}
 
 export default function LoginPage() {
+  return (
+      <Suspense fallback={<LoginPageFallback />}>
+        <LoginPageContent />
+      </Suspense>
+  );
+}
+
+function LoginPageFallback() {
+  return (
+      <main className="flex min-h-screen items-center justify-center bg-gray-100 px-4 py-10">
+        <p className="text-sm font-medium text-gray-600">
+          Cargando inicio de sesión...
+        </p>
+      </main>
+  );
+}
+
+function LoginPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const {
     login,
     isAuthenticated,
-    isLoading
+    isLoading,
+    user
   } = useAuth();
 
   const [email, setEmail] = useState("");
@@ -20,9 +56,9 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace("/dashboard");
+      router.replace(getPostLoginRoute(user!.roleName, searchParams.get("returnTo")));
     }
-  }, [isAuthenticated, isLoading, router]);
+  }, [isAuthenticated, isLoading, router, searchParams, user]);
 
   async function handleSubmit(
       event: FormEvent<HTMLFormElement>
@@ -32,12 +68,12 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      await login({
+      const authenticatedUser = await login({
         email,
         password
       });
 
-      router.replace("/dashboard");
+      router.replace(getPostLoginRoute(authenticatedUser.roleName, searchParams.get("returnTo")));
     } catch (error) {
       if (error instanceof ApiError) {
         setError(error.message);

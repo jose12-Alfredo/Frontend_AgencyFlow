@@ -6,18 +6,21 @@ import {
     useState
 } from "react";
 import {
+    Eye,
     Pencil,
     Plus,
     RefreshCw,
     Trash2
 } from "lucide-react";
 import { RequireAuth } from "@/components/auth/RequireAuth";
+import { ADMIN_ROLES } from "@/lib/roles";
 import { DepartmentDeleteDialog } from "@/components/departments/DepartmentDeleteDialog";
 import { DepartmentFormModal } from "@/components/departments/DepartmentFormModal";
 import { AppShell } from "@/components/layout/AppShell";
 import { ApiError } from "@/services/api";
 import { departmentsService } from "@/services/departments.service";
 import { Department } from "@/types/department.types";
+import Link from "next/link";
 
 export default function DepartmentsPage() {
     const [departments, setDepartments] = useState<Department[]>([]);
@@ -58,7 +61,7 @@ export default function DepartmentsPage() {
     }, [loadDepartments]);
 
     return (
-        <RequireAuth>
+        <RequireAuth allowedRoles={ADMIN_ROLES}>
             <AppShell>
                 <div className="mb-6 flex items-start justify-between gap-4">
                     <div>
@@ -126,7 +129,7 @@ export default function DepartmentsPage() {
                                         Descripción
                                     </th>
 
-                                    <th className="w-32 px-5 py-3 text-right text-xs font-semibold uppercase text-gray-500">
+                                    <th className="w-60 px-5 py-3 text-right text-xs font-semibold uppercase text-gray-500">
                                         Acciones
                                     </th>
                                 </tr>
@@ -165,6 +168,15 @@ export default function DepartmentsPage() {
 
                                             <td className="px-5 py-4 text-right">
                                                 <div className="flex items-center justify-end gap-1">
+                                                    <Link
+                                                        href={`/departments/${department.id}`}
+                                                        title="Ver departamento"
+                                                        aria-label={`Ver departamento ${department.name}`}
+                                                        className="inline-flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-50 hover:text-blue-900"
+                                                    >
+                                                        <Eye size={16} />
+                                                        Ver departamento
+                                                    </Link>
                                                     <button
                                                         type="button"
                                                         title="Editar departamento"

@@ -11,8 +11,9 @@ import { TaskItem } from "@/types/task.types";
 
 interface TaskListViewProps {
     tasks: TaskItem[];
-    onEdit: (task: TaskItem) => void;
-    onDelete: (task: TaskItem) => void;
+    onEdit?: (task: TaskItem) => void;
+    onDelete?: (task: TaskItem) => void;
+    taskHref?: (task: TaskItem) => string;
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -59,8 +60,11 @@ function getDaysOverdue(task: TaskItem): number {
 export function TaskListView({
     tasks,
     onEdit,
-    onDelete
+    onDelete,
+    taskHref
 }: TaskListViewProps) {
+    const hasAdministrativeActions = Boolean(onEdit || onDelete);
+
     if (tasks.length === 0) {
         return (
             <div className="flex h-64 items-center justify-center border border-dashed border-gray-300 bg-white px-6 text-center text-sm text-gray-500">
@@ -71,16 +75,16 @@ export function TaskListView({
 
     return (
         <div className="overflow-x-auto border-y border-gray-200 bg-white">
-            <table className="w-full min-w-[1120px] table-fixed text-left">
+            <table className="w-full min-w-[1040px] table-fixed text-left">
                 <thead className="border-b border-gray-200 bg-gray-50 text-xs font-semibold uppercase text-gray-500">
                     <tr>
-                        <th className="w-[24%] px-4 py-3">Tarea</th>
+                        <th className={`${hasAdministrativeActions ? "w-[24%]" : "w-[26%]"} px-4 py-3`}>Tarea</th>
                         <th className="w-[21%] px-4 py-3">Cliente</th>
                         <th className="w-[12%] px-4 py-3">Estado</th>
                         <th className="w-[14%] px-4 py-3">Responsable</th>
                         <th className="w-[13%] px-4 py-3">Fechas</th>
                         <th className="w-[11%] px-4 py-3">Progreso</th>
-                        <th className="w-[5%] px-4 py-3 text-right">Acciones</th>
+                        {hasAdministrativeActions && <th className="w-[5%] px-4 py-3 text-right">Acciones</th>}
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -95,7 +99,7 @@ export function TaskListView({
                             <tr key={task.id} className="align-top hover:bg-gray-50/70">
                                 <td className="px-4 py-4">
                                     <Link
-                                        href={`/subtasks?subProjectId=${task.subProjectId}&taskId=${task.id}`}
+                                        href={taskHref?.(task) ?? `/subtasks?subProjectId=${task.subProjectId}&taskId=${task.id}`}
                                         className="break-words text-sm font-semibold text-gray-950 hover:text-blue-700"
                                     >
                                         {task.title}
@@ -152,8 +156,9 @@ export function TaskListView({
                                         />
                                     </div>
                                 </td>
-                                <td className="px-4 py-4">
+                                {hasAdministrativeActions && <td className="px-4 py-4">
                                     <div className="flex justify-end gap-1">
+                                        {onEdit &&
                                         <button
                                             type="button"
                                             title="Editar tarea"
@@ -162,8 +167,8 @@ export function TaskListView({
                                             className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-800"
                                         >
                                             <Pencil size={16} />
-                                        </button>
-                                        <button
+                                        </button>}
+                                        {onDelete && <button
                                             type="button"
                                             title="Eliminar tarea"
                                             aria-label={`Eliminar ${task.title}`}
@@ -171,9 +176,9 @@ export function TaskListView({
                                             className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
                                         >
                                             <Trash2 size={16} />
-                                        </button>
+                                        </button>}
                                     </div>
-                                </td>
+                                </td>}
                             </tr>
                         );
                     })}

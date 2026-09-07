@@ -12,6 +12,7 @@ import {
     Trash2
 } from "lucide-react";
 import { RequireAuth } from "@/components/auth/RequireAuth";
+import { ADMIN_ROLES } from "@/lib/roles";
 import { AppShell } from "@/components/layout/AppShell";
 import { ProjectTypeDeleteDialog } from "@/components/project-types/ProjectTypeDeleteDialog";
 import { ProjectTypeFormModal } from "@/components/project-types/ProjectTypeFormModal";
@@ -58,7 +59,7 @@ export default function ProjectTypesPage() {
     }, [loadProjectTypes]);
 
     return (
-        <RequireAuth>
+        <RequireAuth allowedRoles={ADMIN_ROLES}>
             <AppShell>
                 <div className="mb-6 flex items-start justify-between gap-4">
                     <div>

@@ -15,6 +15,8 @@ interface SubTaskFormModalProps {
     initialStatus?: string;
     tasks: TaskItem[];
     users: User[];
+    hideAssignee?: boolean;
+    assigneeLabel?: string;
     onClose: () => void;
     onSaved: () => Promise<void>;
 }
@@ -25,6 +27,8 @@ export function SubTaskFormModal({
     initialStatus,
     tasks,
     users,
+    hideAssignee = false,
+    assigneeLabel,
     onClose,
     onSaved
 }: SubTaskFormModalProps) {
@@ -78,7 +82,9 @@ export function SubTaskFormModal({
                 endDate: endDate || null,
                 status,
                 taskItemId,
-                assignedUserId: assignedUserId || null
+                // En el flujo operativo el backend obtiene al responsable del
+                // JWT. No enviamos una identidad elegida por el cliente.
+                assignedUserId: hideAssignee ? null : assignedUserId || null
             };
 
             if (isEditing) {
@@ -263,6 +269,19 @@ export function SubTaskFormModal({
                                 ))}
                             </select>
                         </div>
+                        {hideAssignee ? (
+                            <div>
+                                <span className="mb-2 block text-sm font-medium text-gray-700">
+                                    Usuario responsable
+                                </span>
+                                <div className="flex h-11 w-full items-center rounded-md border border-gray-300 bg-gray-50 px-3 text-gray-900">
+                                    {assigneeLabel || "Tú (sesión actual)"}
+                                </div>
+                                <p className="mt-2 text-xs text-gray-500">
+                                    La subtarea se asignará automáticamente a tu usuario.
+                                </p>
+                            </div>
+                        ) : (
                         <div>
                             <label
                                 htmlFor="subtask-user"
@@ -291,6 +310,7 @@ export function SubTaskFormModal({
                                 </p>
                             )}
                         </div>
+                        )}
                     </div>
 
                     <footer className="flex justify-end gap-3 border-t border-gray-200 pt-5">

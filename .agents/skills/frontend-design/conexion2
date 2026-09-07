@@ -25,17 +25,19 @@ Requiere la misma autenticación JWT que el resto del dashboard.
 | `departmentId` | No | Limita los subproyectos al área indicada. |
 | `responsibleUserId` | No | Limita tareas/subtareas al responsable, preservando padres de contexto. |
 
-## Regla mensual única
+## Contexto mensual y avance acumulado
 
-Un proyecto, subproyecto, tarea o subtarea pertenece al mes si su intervalo
-planificado se solapa con él:
+El mes selecciona los proyectos y subproyectos cuyo intervalo planificado se
+solapa con él:
 
 ```text
 startDate <= último día del mes
 AND (endDate es null OR endDate >= primer día del mes)
 ```
 
-Así, el trabajo abierto iniciado antes del mes permanece visible en ese mes.
+Una vez seleccionado un subproyecto, la jerarquía incluye todas sus tareas y
+subtareas no eliminadas. El avance es acumulado sobre el alcance completo; una
+tarea futura pendiente también forma parte del divisor.
 
 ## Progreso
 

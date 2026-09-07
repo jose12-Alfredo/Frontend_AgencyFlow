@@ -12,6 +12,7 @@ import {
     Trash2
 } from "lucide-react";
 import { RequireAuth } from "@/components/auth/RequireAuth";
+import { ADMIN_ROLES } from "@/lib/roles";
 import { AppShell } from "@/components/layout/AppShell";
 import { RoleDeleteDialog } from "@/components/roles/RoleDeleteDialog";
 import { RoleFormModal } from "@/components/roles/RoleFormModal";
@@ -55,7 +56,7 @@ export default function RolesPage() {
     }, [loadRoles]);
 
     return (
-        <RequireAuth>
+        <RequireAuth allowedRoles={ADMIN_ROLES}>
             <AppShell>
                 <div className="mb-6 flex items-start justify-between gap-4">
                     <div>

@@ -13,6 +13,7 @@ import {
     Trash2
 } from "lucide-react";
 import { RequireAuth } from "@/components/auth/RequireAuth";
+import { ADMIN_ROLES } from "@/lib/roles";
 import { DepartmentUserDeleteDialog } from "@/components/department-users/DepartmentUserDeleteDialog";
 import { DepartmentUserFormModal } from "@/components/department-users/DepartmentUserFormModal";
 import { AppShell } from "@/components/layout/AppShell";
@@ -72,7 +73,7 @@ export default function DepartmentUsersPage() {
     }, [loadData]);
 
     return (
-        <RequireAuth>
+        <RequireAuth allowedRoles={ADMIN_ROLES}>
             <AppShell>
                 <div className="mb-6 flex items-start justify-between gap-4">
                     <div>

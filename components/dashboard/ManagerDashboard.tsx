@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
     AlertTriangle,
@@ -19,6 +19,7 @@ import {
 import {
     DashboardData,
     ClientHierarchy,
+    ClientHealthItem,
     DashboardRiskItem,
     WorkloadStatusCount,
     WorkloadSubTask
@@ -34,6 +35,7 @@ import { useDashboardFilters } from "@/context/DashboardFiltersContext";
 
 interface ManagerDashboardProps {
     data: DashboardData;
+    clientHealth: ClientHealthItem[];
     isRefreshing: boolean;
     refreshError: string | null;
     onRefresh: () => void;
@@ -179,11 +181,32 @@ function useCloseOnEscape(onClose: () => void) {
 
 export function ManagerDashboard({
     data,
+    clientHealth,
     isRefreshing,
     refreshError,
     onRefresh
 }: ManagerDashboardProps) {
-    const { activeFilterCount, catalogs, filters, setClientCompany } = useDashboardFilters();
+    const { activeFilterCount, catalogs, filters } = useDashboardFilters();
+    const clientsForProgress = useMemo(() => {
+        const healthByClientId = new Map(
+            clientHealth.map((client) => [client.clientId, client])
+        );
+
+        return catalogs.clients.map((client) => healthByClientId.get(client.id) ?? {
+            clientId: client.id,
+            clientName: client.name,
+            representativeUserId: null,
+            representativeUserName: null,
+            progressPercentage: null,
+            activeProjectCount: 0,
+            overdueTaskCount: 0,
+            overdueSubTaskCount: 0,
+            unassignedTaskCount: 0,
+            unassignedSubTaskCount: 0,
+            stalledTaskCount: 0,
+            stalledSubTaskCount: 0
+        });
+    }, [catalogs.clients, clientHealth]);
     const [riskView, setRiskView] = useState<RiskView | null>(null);
     const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
     const [reassigningTaskId, setReassigningTaskId] = useState<string | null>(null);
@@ -892,13 +915,13 @@ export function ManagerDashboard({
                                                             Subtareas
                                                         </h3>
                                                         <span className="text-xs text-gray-400">
-                                                            {item.subTasks.length} activas
+                                                            {item.subTasks.length} en total
                                                         </span>
                                                     </div>
                                                     <div className="mt-2 space-y-2">
                                                         {item.subTasks.length === 0 ? (
                                                             <p className="rounded-md border border-dashed border-gray-300 bg-white px-4 py-5 text-sm text-gray-500">
-                                                                No tiene subtareas activas.
+                                                                No tiene subtareas asignadas.
                                                             </p>
                                                         ) : item.subTasks.map((subTask) => (
                                                             <Link
@@ -977,14 +1000,17 @@ export function ManagerDashboard({
                 </section>
             </div>
 
-            {(data.clientHealth?.length ?? 0) > 0 && (
-                <section className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
+            <section className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
                     <SectionHeading
                         icon={UsersRound}
                         title="Clientes y avance"
                         description="Avance actual, representante interno y señales de riesgo por cliente"
                     />
-                    <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    <ClientProgressTable
+                        clients={clientsForProgress}
+                        onOpen={(clientId) => void openClientHierarchy(clientId)}
+                    />
+                    <div className="hidden">
                         {data.clientHealth?.map((client) => {
                             const risks = client.overdueTaskCount + client.overdueSubTaskCount + client.unassignedTaskCount + client.unassignedSubTaskCount + client.stalledTaskCount + client.stalledSubTaskCount;
                             const progress = client.progressPercentage;
@@ -993,10 +1019,7 @@ export function ManagerDashboard({
                                 <button
                                     key={client.clientId}
                                     type="button"
-                                    onClick={() => {
-                                        setClientCompany(client.clientId);
-                                        void openClientHierarchy(client.clientId);
-                                    }}
+                                    onClick={() => void openClientHierarchy(client.clientId)}
                                     className="group rounded-md border border-gray-200 p-4 transition hover:border-blue-300 hover:bg-blue-50/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                                 >
                                     <div className="flex items-start justify-between gap-3">
@@ -1020,8 +1043,7 @@ export function ManagerDashboard({
                             );
                         })}
                     </div>
-                </section>
-            )}
+            </section>
 
             <section className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
                 <SectionHeading
@@ -1198,7 +1220,7 @@ function ClientHierarchyDialog({
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6" onMouseDown={onClose}>
             <section role="dialog" aria-modal="true" aria-labelledby="client-hierarchy-title" onMouseDown={(event) => event.stopPropagation()} className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl">
-                <header className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 sm:px-6">
+                <header className="flex items-start justify-between gap-4 border-b border-blue-100 bg-gradient-to-r from-blue-50 via-white to-white px-5 py-4 sm:px-6">
                     <div>
                         <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-blue-700">Mapa de producción</p>
                         <h2 id="client-hierarchy-title" className="mt-1 text-lg font-semibold text-gray-950">{hierarchy?.clientName ?? "Detalle del cliente"}</h2>
@@ -1214,36 +1236,62 @@ function ClientHierarchyDialog({
                     ) : hierarchy?.projects.length === 0 ? (
                         <p className="rounded-md border border-dashed border-gray-300 bg-white px-4 py-10 text-center text-sm text-gray-500">No hay proyectos para este cliente en el mes seleccionado.</p>
                     ) : hierarchy && (
-                        <div className="space-y-3">
+                        <div className="space-y-4">
                             {hierarchy.projects.map((project) => (
-                                <details key={project.projectId} className="group rounded-md border border-gray-200 bg-white" open={hierarchy.projects.length === 1}>
-                                    <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4 marker:content-none hover:bg-gray-50">
-                                        <HierarchySummary title={project.title} subtitle={project.assignedUserName ?? "Sin responsable de proyecto"} progress={project.progressPercentage} label="Proyecto" />
-                                        <ChevronDown size={18} className="shrink-0 text-gray-500 transition-transform group-open:rotate-180" />
+                                <details key={project.projectId} className="group overflow-hidden rounded-lg border border-blue-200 border-l-4 border-l-blue-600 bg-white shadow-sm" open={hierarchy.projects.length === 1}>
+                                    <summary className="flex cursor-pointer list-none items-center justify-between gap-4 bg-blue-50/60 p-4 marker:content-none transition hover:bg-blue-50">
+                                        <HierarchySummary title={project.title} subtitle={`Responsable: ${project.assignedUserName ?? "Sin responsable"}`} progress={project.progressPercentage} label="Proyecto" tone="blue" />
+                                        <span className="flex shrink-0 items-center gap-2 text-xs font-semibold text-blue-700">
+                                            {project.subProjects.length} {project.subProjects.length === 1 ? "subproyecto" : "subproyectos"}
+                                            <ChevronDown size={18} className="transition-transform group-open:rotate-180" />
+                                        </span>
                                     </summary>
-                                    <div className="space-y-2 border-t border-gray-100 bg-gray-50/60 p-3 sm:p-4">
+                                    <div className="space-y-3 border-t border-blue-100 bg-slate-50/70 p-3 sm:p-4">
                                         {project.subProjects.map((subProject) => (
-                                            <details key={subProject.subProjectId} className="group/sub rounded border border-gray-200 bg-white">
-                                                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-3 marker:content-none hover:bg-gray-50">
-                                                    <HierarchySummary title={subProject.title} subtitle={`Área: ${subProject.departmentName ?? "Sin área"}`} progress={subProject.progressPercentage} label="Subproyecto" />
-                                                    <ChevronDown size={16} className="shrink-0 text-gray-500 transition-transform group-open/sub:rotate-180" />
+                                            <details key={subProject.subProjectId} className="group/sub overflow-hidden rounded-md border border-violet-200 border-l-4 border-l-violet-500 bg-white">
+                                                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 bg-violet-50/50 p-3 marker:content-none transition hover:bg-violet-50">
+                                                    <HierarchySummary title={subProject.title} subtitle={`Área responsable: ${subProject.departmentName ?? "Sin área asignada"}`} progress={subProject.progressPercentage} label="Subproyecto" tone="violet" />
+                                                    <span className="flex shrink-0 items-center gap-2 text-xs font-semibold text-violet-700">
+                                                        {subProject.tasks.length} {subProject.tasks.length === 1 ? "tarea" : "tareas"}
+                                                        <ChevronDown size={16} className="transition-transform group-open/sub:rotate-180" />
+                                                    </span>
                                                 </summary>
-                                                <div className="space-y-2 border-t border-gray-100 p-3">
+                                                <div className="space-y-3 border-t border-violet-100 bg-white p-3 sm:pl-6">
                                                     {subProject.tasks.length === 0 ? <p className="text-sm text-gray-500">Sin tareas en este periodo.</p> : subProject.tasks.map((task) => (
-                                                        <details key={task.taskId} className="group/task rounded border border-gray-200 bg-gray-50">
-                                                            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-3 marker:content-none hover:bg-white">
-                                                                <HierarchySummary title={task.title} subtitle={`Responsable: ${task.assignedUserName ?? "Sin responsable"} · ${task.status}`} progress={task.progressPercentage} label="Tarea" />
-                                                                <ChevronDown size={15} className="shrink-0 text-gray-500 transition-transform group-open/task:rotate-180" />
-                                                            </summary>
-                                                            <div className="divide-y divide-gray-100 border-t border-gray-200 bg-white">
-                                                                {task.subTasks.length === 0 ? <p className="px-3 py-3 text-sm text-gray-500">Sin subtareas.</p> : task.subTasks.map((subTask) => (
-                                                                    <div key={subTask.subTaskId} className="flex items-center justify-between gap-4 px-3 py-3">
-                                                                        <div className="min-w-0"><p className="truncate text-sm font-medium text-gray-900">{subTask.title}</p><p className="mt-1 text-xs text-gray-500">Responsable: {subTask.assignedUserName ?? "Sin responsable"} · {subTask.status}</p></div>
-                                                                        <span className="shrink-0 text-sm font-semibold text-gray-700">{subTask.progressPercentage === null ? "—" : `${subTask.progressPercentage}%`}</span>
-                                                                    </div>
-                                                                ))}
+                                                        <article key={task.taskId} className="overflow-hidden rounded-md border border-amber-200 border-l-4 border-l-amber-500 bg-amber-50/30">
+                                                            <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
+                                                                <HierarchySummary title={task.title} subtitle={`Responsable: ${task.assignedUserName ?? "Sin responsable"} · Estado: ${task.status}`} progress={task.progressPercentage} label="Tarea" tone="amber" />
+                                                                <Link
+                                                                    href={taskHref(subProject.subProjectId, task.taskId)}
+                                                                    onClick={onClose}
+                                                                    className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md bg-gray-950 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                                                                >
+                                                                    Ver tarea
+                                                                    <ArrowUpRight size={14} />
+                                                                </Link>
                                                             </div>
-                                                        </details>
+                                                            <details className="group/task border-t border-amber-100 bg-white">
+                                                                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-xs font-semibold text-gray-600 marker:content-none hover:bg-gray-50">
+                                                                    <span>{task.subTasks.length} {task.subTasks.length === 1 ? "subtarea" : "subtareas"}</span>
+                                                                    <span className="flex items-center gap-1 text-gray-500">
+                                                                        Ver detalle
+                                                                        <ChevronDown size={15} className="transition-transform group-open/task:rotate-180" />
+                                                                    </span>
+                                                                </summary>
+                                                                <div className="divide-y divide-gray-100 border-t border-gray-100">
+                                                                    {task.subTasks.length === 0 ? <p className="px-3 py-3 text-sm text-gray-500">Sin subtareas.</p> : task.subTasks.map((subTask) => (
+                                                                        <div key={subTask.subTaskId} className="flex items-center justify-between gap-4 px-3 py-3 pl-5 transition hover:bg-emerald-50/30">
+                                                                            <div className="min-w-0">
+                                                                                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-700">Subtarea</p>
+                                                                                <p className="mt-1 truncate text-sm font-medium text-gray-900">{subTask.title}</p>
+                                                                                <p className="mt-1 text-xs text-gray-500">Responsable: {subTask.assignedUserName ?? "Sin responsable"} · Estado: {subTask.status}</p>
+                                                                            </div>
+                                                                            <span className="shrink-0 rounded bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800">{subTask.progressPercentage === null ? "—" : `${subTask.progressPercentage}%`}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </details>
+                                                        </article>
                                                     ))}
                                                 </div>
                                             </details>
@@ -1259,8 +1307,57 @@ function ClientHierarchyDialog({
     );
 }
 
-function HierarchySummary({ title, subtitle, progress, label }: { title: string; subtitle: string; progress: number | null; label: string }) {
-    return <div className="min-w-0 flex-1"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-gray-400">{label}</p><p className="mt-1 truncate text-sm font-semibold text-gray-950">{title}</p><p className="mt-1 truncate text-xs text-gray-500">{subtitle}</p><div className="mt-3 flex items-center gap-3"><div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100"><div className="h-full rounded-full bg-emerald-600" style={{ width: `${clampPercentage(progress ?? 0)}%` }} /></div><span className="w-10 text-right text-xs font-semibold text-gray-700">{progress === null ? "—" : `${progress}%`}</span></div></div>;
+function HierarchySummary({ title, subtitle, progress, label, tone }: { title: string; subtitle: string; progress: number | null; label: string; tone: "blue" | "violet" | "amber" }) {
+    const toneStyles = {
+        blue: { label: "text-blue-700", bar: "bg-blue-600" },
+        violet: { label: "text-violet-700", bar: "bg-violet-600" },
+        amber: { label: "text-amber-700", bar: "bg-amber-500" }
+    }[tone];
+
+    return <div className="min-w-0 flex-1"><p className={`text-[10px] font-bold uppercase tracking-[0.12em] ${toneStyles.label}`}>{label}</p><p className="mt-1 truncate text-sm font-semibold text-gray-950">{title}</p><p className="mt-1 truncate text-xs text-gray-500">{subtitle}</p><div className="mt-3 flex items-center gap-3"><div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200/70"><div className={`h-full rounded-full ${toneStyles.bar}`} style={{ width: `${clampPercentage(progress ?? 0)}%` }} /></div><span className="w-10 text-right text-xs font-semibold text-gray-700">{progress === null ? "—" : `${progress}%`}</span></div></div>;
+}
+
+function ClientProgressTable({
+    clients,
+    onOpen
+}: {
+    clients: ClientHealthItem[];
+    onOpen: (clientId: string) => void;
+}) {
+    return (
+        <div className="mt-5 overflow-x-auto">
+            <div className="min-w-[760px]">
+                <div className="grid grid-cols-[minmax(190px,1.2fr)_minmax(150px,.9fr)_105px_minmax(220px,1fr)_90px] gap-5 border-b border-gray-200 pb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                    <span>Cliente</span>
+                    <span>Representante</span>
+                    <span>Proyectos</span>
+                    <span>Progreso</span>
+                    <span className="text-right">Estado</span>
+                </div>
+                {clients.length === 0 ? (
+                    <p className="py-8 text-center text-sm text-gray-500">No se recibieron clientes para el contexto seleccionado.</p>
+                ) : clients.map((client) => {
+                    const risks = client.overdueTaskCount + client.overdueSubTaskCount + client.unassignedTaskCount + client.unassignedSubTaskCount + client.stalledTaskCount + client.stalledSubTaskCount;
+                    const progress = client.progressPercentage;
+
+                    return (
+                        <button
+                            key={client.clientId}
+                            type="button"
+                            onClick={() => onOpen(client.clientId)}
+                            className="grid w-full grid-cols-[minmax(190px,1.2fr)_minmax(150px,.9fr)_105px_minmax(220px,1fr)_90px] items-center gap-5 border-b border-gray-100 py-4 text-left transition hover:bg-blue-50/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+                        >
+                            <span className="min-w-0"><span className="block truncate text-sm font-semibold text-gray-950">{client.clientName}</span><span className="mt-1 block text-xs text-gray-400">Ver mapa de producción</span></span>
+                            <span className="truncate text-sm text-gray-600">{client.representativeUserName ?? "Sin representante"}</span>
+                            <span className="text-sm font-semibold text-gray-800">{client.activeProjectCount}</span>
+                            <span><span className="mb-2 flex justify-between text-xs text-gray-500"><span>{progress === null ? "Sin datos" : "Avance actual"}</span><strong className="text-gray-800">{progress === null ? "—" : `${progress}%`}</strong></span><span className="block h-2 overflow-hidden rounded-full bg-gray-100"><span className="block h-full rounded-full bg-emerald-600" style={{ width: `${clampPercentage(progress ?? 0)}%` }} /></span></span>
+                            <span className="justify-self-end"><span className={`rounded px-2 py-1 text-xs font-semibold ${risks > 0 ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>{risks > 0 ? "En riesgo" : "Estable"}</span></span>
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
+    );
 }
 
 interface SectionHeadingProps {

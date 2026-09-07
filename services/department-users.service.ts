@@ -13,6 +13,7 @@ interface DepartmentUserListParams {
     pageSize?: number;
     userId?: string;
     departmentId?: string;
+    isDirector?: boolean;
 
     [key: string]:
         | string

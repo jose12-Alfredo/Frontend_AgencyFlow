@@ -107,7 +107,8 @@ export async function apiFetch<T>(
         ) {
             localStorage.removeItem(AUTH_TOKEN_KEY);
             localStorage.removeItem(AUTH_USER_KEY);
-            window.location.replace("/");
+            const returnTo = `${window.location.pathname}${window.location.search}`;
+            window.location.replace(`/?returnTo=${encodeURIComponent(returnTo)}`);
         }
 
         let message = `Error HTTP ${response.status}`;
@@ -122,6 +123,18 @@ export async function apiFetch<T>(
             }
         } catch {
             // La respuesta no contenía JSON.
+        }
+
+        if (message === `Error HTTP ${response.status}`) {
+            message = response.status === 400
+                ? "La solicitud no es vÃ¡lida o el cambio de estado no estÃ¡ permitido."
+                : response.status === 403
+                ? "No tienes permiso para realizar esta acción."
+                : response.status === 404
+                    ? "El recurso solicitado no existe o ya no está disponible."
+                    : response.status === 409
+                        ? "La operación entra en conflicto con el estado actual."
+                        : message;
         }
 
         throw new ApiError(response.status, message);

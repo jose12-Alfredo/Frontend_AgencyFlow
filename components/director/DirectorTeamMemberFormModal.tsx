@@ -1,0 +1,19 @@
+"use client";
+
+import { FormEvent, useState } from "react";
+import { X } from "lucide-react";
+import { ApiError } from "@/services/api";
+import { directorTeamService } from "@/services/director-team.service";
+import { Role } from "@/types/role.types";
+
+interface Props { departmentId: string; departmentName: string; roles: Role[]; onClose: () => void; onSaved: () => Promise<void>; }
+const allowedNames = new Set(["Operativo 1", "Operativo 2", "Pasante"]);
+
+export function DirectorTeamMemberFormModal({ departmentId, departmentName, roles, onClose, onSaved }: Props) {
+    const allowedRoles = roles.filter((role) => allowedNames.has(role.name));
+    const [firstName, setFirstName] = useState(""); const [lastName, setLastName] = useState(""); const [phone, setPhone] = useState(""); const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [roleId, setRoleId] = useState(""); const [saving, setSaving] = useState(false); const [error, setError] = useState<string | null>(null);
+    async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); setError(null); try { await directorTeamService.create({ firstName: firstName.trim(), lastName: lastName.trim(), phone: phone.trim() || null, email: email.trim() || null, password, roleId, clientCompanyId: null, departmentId }); await onSaved(); onClose(); } catch (cause) { setError(cause instanceof ApiError ? cause.message : "No se pudo crear el integrante."); } finally { setSaving(false); } }
+    return <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><form onSubmit={submit} className="w-full max-w-lg space-y-4 rounded-xl bg-white p-6 shadow-xl"><header className="flex items-start justify-between"><div><p className="text-xs font-semibold uppercase text-blue-600">{departmentName}</p><h2 className="mt-1 text-lg font-semibold text-gray-900">Nuevo integrante</h2></div><button type="button" onClick={onClose} className="p-2 text-gray-500"><X size={20} /></button></header>{error && <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p>}<div className="grid gap-4 sm:grid-cols-2"><Field label="Nombre" value={firstName} onChange={setFirstName} required /><Field label="Apellido" value={lastName} onChange={setLastName} required /></div><Field label="Teléfono" value={phone} onChange={setPhone} /><Field label="Correo" value={email} onChange={setEmail} type="email" /><Field label="Contraseña" value={password} onChange={setPassword} type="password" required /><label className="block text-sm font-medium text-gray-700">Rol<select required value={roleId} onChange={(event) => setRoleId(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-gray-300 bg-white px-3"><option value="">Seleccionar rol</option>{allowedRoles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label><footer className="flex justify-end gap-3 border-t pt-4"><button type="button" onClick={onClose} className="h-10 rounded-md border px-4 text-sm">Cancelar</button><button disabled={saving || !roleId} className="h-10 rounded-md bg-gray-900 px-4 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Guardando..." : "Crear integrante"}</button></footer></form></div>;
+}
+
+function Field({ label, value, onChange, type = "text", required = false }: { label: string; value: string; onChange: (value: string) => void; type?: string; required?: boolean }) { return <label className="block text-sm font-medium text-gray-700">{label}<input required={required} type={type} minLength={type === "password" ? 8 : undefined} value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-gray-300 px-3" /></label>; }

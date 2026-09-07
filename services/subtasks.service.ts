@@ -41,6 +41,13 @@ export const subTasksService = {
         });
     },
 
+    updateStatus(id: string, status: string): Promise<SubTask> {
+        return apiFetch<SubTask>(`${BASE_PATH}/${id}/status`, {
+            method: "PATCH",
+            body: JSON.stringify({ status })
+        });
+    },
+
     updateAssignee(
         id: string,
         assignedUserId: string | null

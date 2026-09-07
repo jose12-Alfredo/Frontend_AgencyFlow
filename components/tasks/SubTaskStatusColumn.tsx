@@ -5,10 +5,11 @@ import { useDraggable, useDroppable } from "@dnd-kit/core";
 import {
     CalendarDays,
     Check,
+    ClipboardList,
     CircleAlert,
     GripVertical,
     MessageSquare,
-    Pencil,
+    MoreVertical,
     Plus,
     UserRound
 } from "lucide-react";
@@ -21,45 +22,60 @@ interface SubTaskStatusColumnProps {
     status: SubTaskStatus;
     subTasks: SubTask[];
     onOpenSubTask: (subTask: SubTask) => void;
-    onEditSubTask: (subTask: SubTask) => void;
-    onToggleComplete: (subTask: SubTask) => void;
-    onCreateSubTask: (status: SubTaskStatus) => void;
+    onOpenComments?: (subTask: SubTask) => void;
+    onEditSubTask?: (subTask: SubTask) => void;
+    onToggleComplete?: (subTask: SubTask) => void;
+    onCreateSubTask?: (status: SubTaskStatus) => void;
+    canCreate?: boolean;
+    canEditStructure?: boolean;
+    canComplete?: (subTask: SubTask) => boolean;
+    emptyMessage?: string;
 }
 
 const STATUS_STYLES: Record<
     SubTaskStatus,
-    { dot: string; header: string; drop: string }
+    { dot: string; header: string; drop: string; surface: string; action: string }
 > = {
     Pendiente: {
-        dot: "bg-gray-500",
-        header: "border-gray-300",
-        drop: "bg-gray-200 ring-gray-400"
+        dot: "bg-rose-500",
+        header: "border-rose-200",
+        drop: "bg-rose-50 ring-rose-200",
+        surface: "bg-rose-50/40",
+        action: "border-rose-200 text-rose-600 hover:bg-rose-50"
     },
     "En proceso": {
         dot: "bg-blue-500",
         header: "border-blue-200",
-        drop: "bg-blue-50 ring-blue-300"
+        drop: "bg-blue-50 ring-blue-200",
+        surface: "bg-blue-50/35",
+        action: "border-blue-200 text-blue-600 hover:bg-blue-50"
     },
     "En revisión": {
         dot: "bg-violet-500",
         header: "border-violet-200",
-        drop: "bg-violet-50 ring-violet-300"
+        drop: "bg-violet-50 ring-violet-200",
+        surface: "bg-violet-50/35",
+        action: "border-violet-200 text-violet-600 hover:bg-violet-50"
     },
     Completada: {
         dot: "bg-emerald-500",
         header: "border-emerald-200",
-        drop: "bg-emerald-50 ring-emerald-300"
+        drop: "bg-emerald-50 ring-emerald-200",
+        surface: "bg-emerald-50/35",
+        action: "border-emerald-200 text-emerald-700 hover:bg-emerald-50"
     },
     Pausada: {
         dot: "bg-amber-500",
         header: "border-amber-200",
-        drop: "bg-amber-50 ring-amber-300"
+        drop: "bg-amber-50 ring-amber-200",
+        surface: "bg-amber-50/35",
+        action: "border-amber-200 text-amber-700 hover:bg-amber-50"
     }
 };
 
 function formatDate(value: string | null): string {
     if (!value) {
-        return "Sin fecha";
+        return "Sin fecha límite";
     }
 
     const [year, month, day] = value.split("-").map(Number);
@@ -73,12 +89,18 @@ function DraggableSubTaskCard({
     subTask,
     onOpen,
     onEdit,
-    onToggleComplete
+    onToggleComplete,
+    onOpenComments,
+    canEdit,
+    canComplete
 }: {
     subTask: SubTask;
     onOpen: () => void;
-    onEdit: () => void;
-    onToggleComplete: () => void;
+    onEdit?: () => void;
+    onToggleComplete?: () => void;
+    onOpenComments?: () => void;
+    canEdit: boolean;
+    canComplete: boolean;
 }) {
     const {
         attributes,
@@ -110,12 +132,12 @@ function DraggableSubTaskCard({
             style={style}
             {...listeners}
             {...attributes}
-            className={`cursor-grab touch-none rounded-md border border-gray-200 bg-white p-3 shadow-sm transition hover:border-gray-300 hover:shadow active:cursor-grabbing ${
+            className={`cursor-grab touch-none rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm transition hover:border-gray-300 hover:shadow-md active:cursor-grabbing ${
                 isDragging ? "z-50 opacity-50 shadow-lg" : ""
             }`}
         >
             <div className="flex items-start gap-2">
-                <button
+                {canComplete && onToggleComplete && <button
                     type="button"
                     title={
                         isCompleted
@@ -129,14 +151,14 @@ function DraggableSubTaskCard({
                     }
                     onClick={onToggleComplete}
                     onPointerDown={(event) => event.stopPropagation()}
-                    className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded border transition ${
+                    className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border transition ${
                         isCompleted
                             ? "border-emerald-600 bg-emerald-600 text-white"
                             : "border-gray-300 bg-white text-transparent hover:border-emerald-500"
                     }`}
                 >
                     <Check size={14} strokeWidth={3} />
-                </button>
+                </button>}
 
                 <button
                     type="button"
@@ -163,10 +185,15 @@ function DraggableSubTaskCard({
                             Atrasada
                         </span>
                     )}
+                    {subTask.status === "Pausada" && (
+                        <span className="mt-2 flex w-fit rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700">
+                            Pausada
+                        </span>
+                    )}
                 </button>
 
                 <div className="flex shrink-0 items-center">
-                    <button
+                    {canEdit && onEdit && <button
                         type="button"
                         title="Editar subtarea"
                         aria-label={`Editar ${subTask.title}`}
@@ -174,8 +201,8 @@ function DraggableSubTaskCard({
                         onPointerDown={(event) => event.stopPropagation()}
                         className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
                     >
-                        <Pencil size={15} />
-                    </button>
+                        <MoreVertical size={17} />
+                    </button>}
                     <button
                         type="button"
                         title="Mover subtarea"
@@ -194,32 +221,30 @@ function DraggableSubTaskCard({
                 </span>
             </div>
 
-            <button
-                type="button"
-                onClick={onOpen}
-                className="mt-3 flex w-full items-center justify-between border-t border-gray-100 pt-3 text-xs text-gray-500"
-            >
-                <span className="flex items-center gap-1.5">
+            <div className="mt-3 flex w-full items-center justify-between border-t border-gray-100 pt-3 text-xs text-gray-500">
+                <button type="button" onClick={onOpen} onPointerDown={(event) => event.stopPropagation()} className="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-gray-50 hover:text-gray-800">
                     <CalendarDays size={14} />
-                    Fecha límite: {formatDate(subTask.endDate)}
-                </span>
-                <span
+                    {formatDate(subTask.endDate)}
+                </button>
+                <button
+                    type="button"
+                    title="Abrir comentarios"
+                    aria-label={`Abrir ${subTask.commentCount} comentarios de ${subTask.title}`}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        (onOpenComments ?? onOpen)();
+                    }}
                     className={`flex items-center gap-1 ${
                         subTask.commentCount > 0
-                            ? "font-semibold text-blue-700"
-                            : ""
+                            ? "rounded px-1.5 py-0.5 font-semibold text-blue-700 hover:bg-blue-50"
+                            : "rounded px-1.5 py-0.5 hover:bg-gray-50 hover:text-gray-800"
                     }`}
                 >
                     <MessageSquare size={14} />
-                    {subTask.commentCount === 0
-                        ? "Comentar"
-                        : `${subTask.commentCount} ${
-                            subTask.commentCount === 1
-                                ? "comentario"
-                                : "comentarios"
-                        }`}
-                </span>
-            </button>
+                    {subTask.commentCount}
+                </button>
+            </div>
         </article>
     );
 }
@@ -228,9 +253,14 @@ export function SubTaskStatusColumn({
     status,
     subTasks,
     onOpenSubTask,
+    onOpenComments,
     onEditSubTask,
     onToggleComplete,
-    onCreateSubTask
+    onCreateSubTask,
+    canCreate = true,
+    canEditStructure = true,
+    canComplete = () => true,
+    emptyMessage = "Arrastra o crea una nueva subtarea"
 }: SubTaskStatusColumnProps) {
     const { setNodeRef, isOver } = useDroppable({
         id: status,
@@ -239,28 +269,28 @@ export function SubTaskStatusColumn({
     const styles = STATUS_STYLES[status];
 
     return (
-        <section className="flex h-[calc(100vh-20rem)] min-h-[430px] w-[286px] shrink-0 flex-col overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
+        <section className={`flex h-[calc(100vh-29rem)] min-h-[430px] w-full min-w-0 flex-col overflow-hidden rounded-xl border border-gray-200 ${styles.surface}`}>
             <header
-                className={`flex h-12 shrink-0 items-center justify-between border-b-2 bg-white px-4 ${styles.header}`}
+                className={`flex h-14 shrink-0 items-center justify-between border-b-2 bg-white px-4 ${styles.header}`}
             >
                 <div className="flex min-w-0 items-center gap-2">
                     <span className={`size-2.5 rounded-full ${styles.dot}`} />
                     <h2 className="truncate text-sm font-semibold text-gray-900">
                         {status}
                     </h2>
-                    <span className="text-xs font-medium text-gray-400">
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">
                         {subTasks.length}
                     </span>
                 </div>
-                <button
+                {canCreate && onCreateSubTask && <button
                     type="button"
                     title={`Agregar subtarea ${status.toLowerCase()}`}
                     aria-label={`Agregar subtarea ${status.toLowerCase()}`}
                     onClick={() => onCreateSubTask(status)}
-                    className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                    className="rounded-md p-1.5 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
                 >
                     <Plus size={17} />
-                </button>
+                </button>}
             </header>
 
             <div
@@ -274,14 +304,20 @@ export function SubTaskStatusColumn({
                         key={subTask.id}
                         subTask={subTask}
                         onOpen={() => onOpenSubTask(subTask)}
-                        onEdit={() => onEditSubTask(subTask)}
-                        onToggleComplete={() => onToggleComplete(subTask)}
+                        onOpenComments={onOpenComments ? () => onOpenComments(subTask) : undefined}
+                        onEdit={onEditSubTask ? () => onEditSubTask(subTask) : undefined}
+                        onToggleComplete={onToggleComplete ? () => onToggleComplete(subTask) : undefined}
+                        canEdit={canEditStructure}
+                        canComplete={canComplete(subTask)}
                     />
                 ))}
 
                 {subTasks.length === 0 && (
-                    <div className="rounded-md border border-dashed border-gray-300 px-3 py-7 text-center text-xs leading-5 text-gray-500">
-                        Sin subtareas en este estado.
+                    <div className="flex min-h-48 flex-col items-center justify-center rounded-lg border border-dashed border-gray-200 bg-white/50 px-3 py-6 text-center text-xs leading-5 text-gray-500">
+                        <span className={`mb-3 flex size-10 items-center justify-center rounded-full border border-dashed ${styles.action}`}><ClipboardList size={18} /></span>
+                        <strong className="text-sm font-semibold text-gray-800">Sin subtareas</strong>
+                        <span className="mt-1">{emptyMessage}</span>
+                        {canCreate && onCreateSubTask && <button type="button" onClick={() => onCreateSubTask(status)} className={`mt-4 inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-xs font-semibold transition ${styles.action}`}><Plus size={15} />Crear subtarea</button>}
                     </div>
                 )}
             </div>
