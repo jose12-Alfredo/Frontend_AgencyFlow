@@ -4,6 +4,8 @@ export interface ClientCompany {
     description: string | null;
     email: string | null;
     phone: string | null;
+    representativeUserId?: string | null;
+    representativeUserName?: string | null;
 }
 
 export interface ClientCompanyRequest {

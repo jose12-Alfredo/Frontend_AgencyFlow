@@ -7,14 +7,15 @@ import {
 import { X } from "lucide-react";
 import { ApiError } from "@/services/api";
 import { projectsService } from "@/services/projects.service";
-import { Project } from "@/types/project.types";
+import { Project, ProjectResponsible } from "@/types/project.types";
 import { ProjectType } from "@/types/project-type.types";
-import { User } from "@/types/user.types";
+import { ClientCompany } from "@/types/client-company.types";
 
 interface ProjectFormModalProps {
     project: Project | null;
     projectTypes: ProjectType[];
-    clients: User[];
+    clients: ClientCompany[];
+    responsibles: ProjectResponsible[];
     onClose: () => void;
     onSaved: () => Promise<void>;
 }
@@ -23,6 +24,7 @@ export function ProjectFormModal({
     project,
     projectTypes,
     clients,
+    responsibles,
     onClose,
     onSaved
 }: ProjectFormModalProps) {
@@ -33,8 +35,11 @@ export function ProjectFormModal({
     const [projectTypeId, setProjectTypeId] = useState(
         project?.projectTypeId ?? ""
     );
-    const [clientUserId, setClientUserId] = useState(
-        project?.clientUserId ?? ""
+    const [clientCompanyId, setClientCompanyId] = useState(
+        project?.clientCompanyId ?? ""
+    );
+    const [responsibleUserId, setResponsibleUserId] = useState(
+        project?.responsibleUserId ?? ""
     );
     const [error, setError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
@@ -44,8 +49,8 @@ export function ProjectFormModal({
     async function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
 
-        if (!title.trim() || !startDate || !projectTypeId) {
-            setError("Título, fecha inicial y tipo de proyecto son obligatorios.");
+        if (!title.trim() || !startDate || !projectTypeId || !responsibleUserId) {
+            setError("Título, fecha inicial, tipo de proyecto y responsable son obligatorios.");
             return;
         }
 
@@ -64,7 +69,8 @@ export function ProjectFormModal({
                 startDate,
                 endDate: endDate || null,
                 projectTypeId,
-                clientUserId: clientUserId || null
+                clientCompanyId: clientCompanyId || null,
+                responsibleUserId
             };
 
             if (isEditing) {
@@ -245,25 +251,49 @@ export function ProjectFormModal({
                                 htmlFor="project-client"
                                 className="mb-2 block text-sm font-medium text-gray-700"
                             >
-                                Usuario cliente
+                                Empresa cliente
                             </label>
 
                             <select
                                 id="project-client"
-                                value={clientUserId}
+                                value={clientCompanyId}
                                 onChange={(event) =>
-                                    setClientUserId(event.target.value)
+                                    setClientCompanyId(event.target.value)
                                 }
                                 className="h-11 w-full rounded-md border border-gray-300 bg-white px-3 text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
                             >
-                                <option value="">Sin usuario cliente</option>
+                                <option value="">Sin empresa cliente</option>
                                 {clients.map((client) => (
                                     <option key={client.id} value={client.id}>
-                                        {client.firstName} {client.lastName}
+                                        {client.name}
                                     </option>
                                 ))}
                             </select>
                         </div>
+                    </div>
+
+                    <div>
+                        <label
+                            htmlFor="project-responsible"
+                            className="mb-2 block text-sm font-medium text-gray-700"
+                        >
+                            Responsable del proyecto
+                        </label>
+
+                        <select
+                            id="project-responsible"
+                            value={responsibleUserId}
+                            onChange={(event) => setResponsibleUserId(event.target.value)}
+                            required
+                            className="h-11 w-full rounded-md border border-gray-300 bg-white px-3 text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                        >
+                            <option value="">Seleccionar responsable</option>
+                            {responsibles.map((responsible) => (
+                                <option key={responsible.id} value={responsible.id}>
+                                    {responsible.firstName} {responsible.lastName} — {responsible.jobPositionName || responsible.roleName}
+                                </option>
+                            ))}
+                        </select>
                     </div>
 
                     <footer className="flex justify-end gap-3 border-t border-gray-200 pt-5">
@@ -278,7 +308,7 @@ export function ProjectFormModal({
 
                         <button
                             type="submit"
-                            disabled={isSaving || projectTypes.length === 0}
+                            disabled={isSaving || projectTypes.length === 0 || responsibles.length === 0}
                             className="h-10 rounded-md bg-gray-900 px-4 text-sm font-semibold text-white transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                             {isSaving ? "Guardando..." : "Guardar proyecto"}

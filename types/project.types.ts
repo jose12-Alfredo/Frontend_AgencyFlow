@@ -11,6 +11,10 @@ export interface Project {
     clientUserLastName: string | null;
     clientCompanyId: string | null;
     clientCompanyName: string | null;
+    responsibleUserId: string | null;
+    responsibleUserFirstName: string | null;
+    responsibleUserLastName: string | null;
+    responsibleUserJobPositionName: string | null;
 }
 
 export interface ProjectRequest {
@@ -19,7 +23,16 @@ export interface ProjectRequest {
     startDate: string;
     endDate?: string | null;
     projectTypeId: string;
-    clientUserId?: string | null;
+    clientCompanyId?: string | null;
+    responsibleUserId: string;
+}
+
+export interface ProjectResponsible {
+    id: string;
+    firstName: string;
+    lastName: string;
+    roleName: string;
+    jobPositionName: string | null;
 }
 
 export interface SubProjectSummary {

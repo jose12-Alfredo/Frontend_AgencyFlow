@@ -10,7 +10,10 @@ export interface LoginResponse {
     lastName: string;
     email: string;
     roleName: string;
+    jobPositionId: string | null;
+    jobPositionName: string | null;
     departments: string[];
+    permissions: string[];
 }
 
 export interface AuthUser {
@@ -19,5 +22,9 @@ export interface AuthUser {
     lastName: string;
     email: string;
     roleName: string;
+    jobPositionId: string | null;
+    jobPositionName: string | null;
     departments: string[];
+    permissions: string[];
+    permissionsVersion: number;
 }

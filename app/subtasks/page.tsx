@@ -8,7 +8,6 @@ import {
     useRef,
     useState
 } from "react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
     CollisionDetection,
@@ -27,19 +26,17 @@ import {
     Building2,
     CalendarDays,
     CheckCircle2,
-    ChevronRight,
     Clock3,
     FileText,
     GripVertical,
-    Info,
     Plus,
     RefreshCw
 } from "lucide-react";
 import { RequireAuth } from "@/components/auth/RequireAuth";
-import { PROJECT_MANAGER_ROLES } from "@/lib/roles";
-import { isAdministrator } from "@/lib/roles";
+import { PROJECT_MANAGER_ROLES, hasPermission, isAdministrator } from "@/lib/roles";
 import { useAuth } from "@/context/AuthContext";
 import { AppShell } from "@/components/layout/AppShell";
+import { WorkHierarchyBreadcrumbs } from "@/components/navigation/WorkHierarchyBreadcrumbs";
 import { SubTaskCommentsModal } from "@/components/subtasks/SubTaskCommentsModal";
 import { SubTaskFormModal } from "@/components/subtasks/SubTaskFormModal";
 import { SubTaskStatusColumn } from "@/components/tasks/SubTaskStatusColumn";
@@ -51,6 +48,7 @@ import { usersService } from "@/services/users.service";
 import { departmentUsersService } from "@/services/department-users.service";
 import { loadAllPages } from "@/services/pagination";
 import {
+    authUserToAssignableUser,
     getAssignableUsers,
     membershipsToAssignableUsers
 } from "@/lib/assignment";
@@ -64,7 +62,7 @@ import { TaskItem } from "@/types/task.types";
 import { User } from "@/types/user.types";
 
 interface NewSubTaskState {
-    taskId: string;
+    taskId?: string;
     status: SubTaskStatus;
 }
 
@@ -192,6 +190,11 @@ export default function SubTasksPage() {
 function TasksContent() {
     const { user } = useAuth();
     const canAdminister = isAdministrator(user?.roleName);
+    const canViewUsers = hasPermission(user?.permissions, "users.view");
+    const canViewMemberships = hasPermission(user?.permissions, "department_memberships.view");
+    const canAssignSubTasks = hasPermission(user?.permissions, "subtasks.assign");
+    const canCreateSubTasks = user?.roleName === "Director" ||
+        hasPermission(user?.permissions, "subtasks.create");
     const searchParams = useSearchParams();
     const requestedClientCompanyId =
         searchParams.get("clientCompanyId") ?? "";
@@ -251,13 +254,29 @@ function TasksContent() {
                 loadAllPages((page, pageSize) => subProjectsService.getAll({ page, pageSize }))
             ]);
 
-            const loadedUsers: User[] = canAdminister
+            const loadedUsers: User[] = canViewUsers
                 ? await loadAllPages((page, pageSize) => usersService.getAll({ page, pageSize }))
-                : membershipsToAssignableUsers(
-                    await loadAllPages((page, pageSize) =>
-                        departmentUsersService.getAll({ page, pageSize })
+                : canAssignSubTasks && visibleSubProjects.length > 0
+                    ? (await subProjectsService.getFormOptions(visibleSubProjects[0].projectId)).users.map(option => ({
+                        id: option.id,
+                        firstName: option.firstName,
+                        lastName: option.lastName,
+                        phone: null,
+                        email: null,
+                        roleId: "",
+                        roleName: "Usuario interno",
+                        jobPositionId: null,
+                        jobPositionName: null,
+                        clientCompanyId: null,
+                        clientCompanyName: null
+                    }))
+                : canViewMemberships
+                    ? membershipsToAssignableUsers(
+                        await loadAllPages((page, pageSize) =>
+                            departmentUsersService.getAll({ page, pageSize })
+                        )
                     )
-                );
+                    : user ? [authUserToAssignableUser(user)] : [];
 
             if (isBackgroundRefresh && dataGeneration !== dataGenerationRef.current) {
                 return;
@@ -293,9 +312,7 @@ function TasksContent() {
                         ? getClientFilterId(
                             requestedSubProject.clientCompanyId
                         )
-                        : getClientFilterId(
-                            visibleSubProjects[0]?.clientCompanyId ?? null
-                        );
+                        : "";
                 const requestedProjectExists = visibleSubProjects.some(
                     (subProject) =>
                         subProject.projectId === requestedProjectId &&
@@ -308,39 +325,17 @@ function TasksContent() {
                     getClientFilterId(requestedSubProject.clientCompanyId) ===
                     initialClientCompanyId
                         ? requestedSubProject.projectId
-                        : visibleSubProjects.find(
-                            (subProject) =>
-                                getClientFilterId(
-                                    subProject.clientCompanyId
-                                ) === initialClientCompanyId
-                        )?.projectId ??
-                    visibleTasks[0]?.projectId ??
-                    visibleSubProjects[0]?.projectId ??
-                    "";
+                        : "";
                 const initialSubProjectId = requestedSubProject?.projectId === initialProjectId &&
                     getClientFilterId(requestedSubProject.clientCompanyId) === initialClientCompanyId
                     ? requestedSubProject.id
-                    : visibleTasks.find(
-                        (task) => task.projectId === initialProjectId &&
-                            getClientFilterId(task.clientCompanyId) === initialClientCompanyId
-                    )?.subProjectId ?? visibleSubProjects.find(
-                        (subProject) =>
-                            subProject.projectId === initialProjectId &&
-                            getClientFilterId(
-                                subProject.clientCompanyId
-                            ) === initialClientCompanyId
-                    )?.id ?? "";
+                    : "";
                 const requestedTaskExists = visibleTasks.some(
                     (task) =>
                         task.id === requestedTaskId &&
                         task.subProjectId === initialSubProjectId
                 );
-                const initialTaskId = requestedTaskExists
-                    ? requestedTaskId
-                    : visibleTasks.find(
-                        (task) =>
-                            task.subProjectId === initialSubProjectId
-                    )?.id ?? "";
+                const initialTaskId = requestedTaskExists ? requestedTaskId : "";
 
                 setSelectedClientCompanyId(initialClientCompanyId);
                 setSelectedProjectId(initialProjectId);
@@ -363,10 +358,14 @@ function TasksContent() {
         }
     }, [
         canAdminister,
+        canAssignSubTasks,
+        canViewMemberships,
+        canViewUsers,
         requestedClientCompanyId,
         requestedProjectId,
         requestedSubProjectId,
-        requestedTaskId
+        requestedTaskId,
+        user
     ]);
 
     useEffect(() => {
@@ -415,11 +414,13 @@ function TasksContent() {
         return Array.from(clientsById, ([id, name]) => ({ id, name }));
     }, [subProjects]);
     const subProjectsForClient = useMemo(
-        () => subProjects.filter(
-            (subProject) =>
-                getClientFilterId(subProject.clientCompanyId) ===
-                selectedClientCompanyId
-        ),
+        () => selectedClientCompanyId
+            ? subProjects.filter(
+                (subProject) =>
+                    getClientFilterId(subProject.clientCompanyId) ===
+                    selectedClientCompanyId
+            )
+            : subProjects,
         [selectedClientCompanyId, subProjects]
     );
     const projects = useMemo(() => {
@@ -432,33 +433,44 @@ function TasksContent() {
         return Array.from(projectsById, ([id, title]) => ({ id, title }));
     }, [subProjectsForClient]);
     const subProjectsForProject = useMemo(
-        () => subProjectsForClient.filter(
-            (subProject) => subProject.projectId === selectedProjectId
-        ),
+        () => selectedProjectId
+            ? subProjectsForClient.filter(
+                (subProject) => subProject.projectId === selectedProjectId
+            )
+            : subProjectsForClient,
         [selectedProjectId, subProjectsForClient]
     );
     const tasksForSubProject = useMemo(
-        () =>
-            tasks.filter(
-                (task) => task.subProjectId === selectedSubProjectId
-            ),
-        [tasks, selectedSubProjectId]
+        () => {
+            const visibleSubProjectIds = new Set(
+                subProjectsForProject.map((subProject) => subProject.id)
+            );
+
+            return tasks.filter((task) =>
+                selectedSubProjectId
+                    ? task.subProjectId === selectedSubProjectId
+                    : visibleSubProjectIds.has(task.subProjectId)
+            );
+        },
+        [selectedSubProjectId, subProjectsForProject, tasks]
     );
     const selectedSubProject = subProjects.find(
         (subProject) => subProject.id === selectedSubProjectId
     );
     const selectedTask =
-        tasksForSubProject.find((task) => task.id === selectedTaskId) ??
-        tasksForSubProject[0] ??
-        null;
+        tasksForSubProject.find((task) => task.id === selectedTaskId) ?? null;
     const selectedTaskSubTasks = useMemo(
         () =>
-            selectedTask
+            selectedTaskId
                 ? subTasks.filter(
-                    (subTask) => subTask.taskItemId === selectedTask.id
+                    (subTask) => subTask.taskItemId === selectedTaskId
                 )
-                : [],
-        [selectedTask, subTasks]
+                : subTasks.filter((subTask) =>
+                    tasksForSubProject.some(
+                        (task) => task.id === subTask.taskItemId
+                    )
+                ),
+        [selectedTaskId, subTasks, tasksForSubProject]
     );
     const progressData = useMemo(() => {
         const completed = selectedTaskSubTasks.filter(
@@ -480,55 +492,32 @@ function TasksContent() {
 
     function handleClientChange(clientCompanyId: string) {
         setSelectedClientCompanyId(clientCompanyId);
-        const firstSubProject = subProjects.find(
-            (subProject) =>
-                getClientFilterId(subProject.clientCompanyId) ===
-                clientCompanyId
-        );
-        const projectId = firstSubProject?.projectId ?? "";
-        const subProjectId = firstSubProject?.id ?? "";
-        const taskId = tasks.find(
-            (task) => task.subProjectId === subProjectId
-        )?.id ?? "";
-
-        setSelectedProjectId(projectId);
-        setSelectedSubProjectId(subProjectId);
-        setSelectedTaskId(taskId);
-        updateSelectionUrl(clientCompanyId, projectId, subProjectId, taskId);
+        setSelectedProjectId("");
+        setSelectedSubProjectId("");
+        setSelectedTaskId("");
+        updateSelectionUrl(clientCompanyId, "", "", "");
     }
 
     function handleProjectChange(projectId: string) {
         setSelectedProjectId(projectId);
-        const firstSubProject = subProjectsForClient.find(
-            (subProject) => subProject.projectId === projectId
-        );
-        const subProjectId = firstSubProject?.id ?? "";
-        const taskId = tasks.find(
-            (task) => task.subProjectId === subProjectId
-        )?.id ?? "";
-
-        setSelectedSubProjectId(subProjectId);
-        setSelectedTaskId(taskId);
+        setSelectedSubProjectId("");
+        setSelectedTaskId("");
         updateSelectionUrl(
             selectedClientCompanyId,
             projectId,
-            subProjectId,
-            taskId
+            "",
+            ""
         );
     }
 
     function handleSubProjectChange(subProjectId: string) {
         setSelectedSubProjectId(subProjectId);
-        const firstTask = tasks.find(
-            (task) => task.subProjectId === subProjectId
-        );
-        const taskId = firstTask?.id ?? "";
-        setSelectedTaskId(taskId);
+        setSelectedTaskId("");
         updateSelectionUrl(
             selectedClientCompanyId,
             selectedProjectId,
             subProjectId,
-            taskId
+            ""
         );
     }
 
@@ -676,24 +665,19 @@ function TasksContent() {
                 <header className="mb-4 flex items-start justify-between gap-4">
                     <div className="min-w-0">
                         {selectedTask && selectedSubProject ? (
-                            <nav aria-label="Ruta de navegación" className="flex max-w-full items-center gap-1 text-sm text-gray-500">
-                                <Link href="/client-companies" title={selectedTask.clientCompanyName ?? "Sin empresa cliente"} className="max-w-32 truncate text-blue-600 hover:text-blue-800 hover:underline sm:max-w-44">{selectedTask.clientCompanyName ?? "Sin empresa cliente"}</Link>
-                                <ChevronRight size={14} className="shrink-0 text-gray-400" />
-                                <Link href={`/subprojects?projectId=${selectedTask.projectId}`} title={selectedTask.projectTitle} className="max-w-32 truncate text-blue-600 hover:text-blue-800 hover:underline sm:max-w-44">{selectedTask.projectTitle}</Link>
-                                <ChevronRight size={14} className="shrink-0 text-gray-400" />
-                                <Link href={`/tasks?projectId=${selectedTask.projectId}&subProjectId=${selectedSubProject.id}`} title={selectedSubProject.title} className="max-w-32 truncate text-blue-600 hover:text-blue-800 hover:underline sm:max-w-44">{selectedSubProject.title}</Link>
-                                <ChevronRight size={14} className="shrink-0 text-gray-400" />
-                                <Link href={`/tasks?projectId=${selectedTask.projectId}&subProjectId=${selectedSubProject.id}`} title={selectedTask.title} className="max-w-36 truncate text-blue-600 hover:text-blue-800 hover:underline sm:max-w-48">{selectedTask.title}</Link>
-                                <ChevronRight size={14} className="shrink-0 text-gray-400" />
-                                <span className="shrink-0 font-medium text-gray-700">Subtareas</span>
-                            </nav>
+                            <WorkHierarchyBreadcrumbs items={[
+                                { type: "Cliente", label: selectedTask.clientCompanyName ?? "Sin empresa cliente", href: selectedTask.clientCompanyId ? `/client-companies/${selectedTask.clientCompanyId}` : undefined },
+                                { type: "Proyecto", label: selectedTask.projectTitle, href: `/projects/${selectedTask.projectId}` },
+                                { type: "Subproyecto", label: selectedSubProject.title, href: `/subprojects/${selectedSubProject.id}` },
+                                { type: "Tarea", label: selectedTask.title }
+                            ]} />
                         ) : <p className="text-sm font-medium text-gray-500">Subtareas</p>}
                         <h1 className="mt-3 truncate text-2xl font-bold tracking-tight text-gray-950 sm:text-3xl">{selectedTask?.title ?? "Subtareas"}</h1>
                         {selectedTask && selectedSubProject && <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-600"><span>Subproyecto: <strong className="font-medium text-gray-800">{selectedSubProject.title}</strong></span><span className="text-gray-300">•</span><span>Proyecto: <strong className="font-medium text-gray-800">{selectedTask.projectTitle}</strong></span><span className="text-gray-300">•</span><span>Cliente: <strong className="font-medium text-gray-800">{selectedTask.clientCompanyName ?? "Sin empresa cliente"}</strong></span></p>}
                     </div>
 
                     <div className="flex shrink-0 items-center gap-2">
-                        {selectedTask && <button type="button" onClick={() => setNewSubTask({ taskId: selectedTask.id, status: "Pendiente" })} className="inline-flex h-11 items-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"><Plus size={18} /><span className="hidden sm:inline">Nueva subtarea</span></button>}
+                        {canCreateSubTasks && <button type="button" onClick={() => setNewSubTask({ taskId: selectedTask?.id, status: "Pendiente" })} className="inline-flex h-11 items-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"><Plus size={18} /><span className="hidden sm:inline">Nueva subtarea</span></button>}
                         <button
                             type="button"
                             title="Actualizar tablero"
@@ -753,6 +737,9 @@ function TasksContent() {
                                 disabled={clients.length === 0}
                                 className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:bg-gray-100"
                             >
+                                {clients.length > 0 && (
+                                    <option value="">Todos los clientes</option>
+                                )}
                                 {clients.length === 0 && (
                                     <option value="">Sin clientes</option>
                                 )}
@@ -780,6 +767,9 @@ function TasksContent() {
                                 disabled={projects.length === 0}
                                 className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:bg-gray-100"
                             >
+                                {projects.length > 0 && (
+                                    <option value="">Todos los proyectos</option>
+                                )}
                                 {projects.length === 0 && (
                                     <option value="">Sin proyectos</option>
                                 )}
@@ -807,6 +797,9 @@ function TasksContent() {
                                 disabled={subProjectsForProject.length === 0}
                                 className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:bg-gray-100"
                             >
+                                {subProjectsForProject.length > 0 && (
+                                    <option value="">Todos los subproyectos</option>
+                                )}
                                 {subProjectsForProject.length === 0 && (
                                     <option value="">Sin subproyectos</option>
                                 )}
@@ -830,13 +823,16 @@ function TasksContent() {
                             </label>
                             <select
                                 id="board-task"
-                                value={selectedTask?.id ?? ""}
+                                value={selectedTaskId}
                                 onChange={(event) =>
                                     handleTaskSelection(event.target.value)
                                 }
                                 disabled={tasksForSubProject.length === 0}
                                 className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:bg-gray-100"
                             >
+                                {tasksForSubProject.length > 0 && (
+                                    <option value="">Todas las tareas</option>
+                                )}
                                 {tasksForSubProject.length === 0 && (
                                     <option value="">Sin tareas</option>
                                 )}
@@ -898,8 +894,6 @@ function TasksContent() {
                                 </div>
                             </div>
                         )}
-
-                        {selectedTask && selectedSubProject && <Link href={`/tasks?projectId=${selectedTask.projectId}&subProjectId=${selectedSubProject.id}`} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 text-sm font-medium text-gray-700 transition hover:bg-gray-50"><Info size={18} />Ver detalles de la tarea</Link>}
 
                     </div>
                 </section>
@@ -997,16 +991,16 @@ function TasksContent() {
 
                 <div className="mb-3 flex items-center justify-between gap-3">
                     <h2 className="text-xl font-bold tracking-tight text-gray-950">Subtareas</h2>
-                    {selectedTask && <span className="text-sm text-gray-500">{progressData.total} registradas</span>}
+                    {tasksForSubProject.length > 0 && <span className="text-sm text-gray-500">{progressData.total} registradas</span>}
                 </div>
 
                 {isLoading ? (
                     <div className="flex h-72 items-center justify-center rounded-lg border border-gray-200 bg-white text-sm text-gray-500">
                         Cargando tablero...
                     </div>
-                ) : !selectedTask ? (
+                ) : tasksForSubProject.length === 0 ? (
                     <div className="flex h-72 items-center justify-center rounded-lg border border-dashed border-gray-300 bg-white text-sm text-gray-500">
-                        El subproyecto seleccionado todavía no tiene tareas.
+                        No hay tareas para los filtros seleccionados.
                     </div>
                 ) : (
                     <DndContext
@@ -1039,12 +1033,12 @@ function TasksContent() {
                                                 : "Completada"
                                         )
                                     }
-                                    onCreateSubTask={(status) =>
+                                    onCreateSubTask={canCreateSubTasks ? (status) =>
                                         setNewSubTask({
-                                            taskId: selectedTask.id,
+                                            taskId: selectedTask?.id,
                                             status
-                                        })
-                                    }
+                                        }) : undefined}
+                                    canCreate={canCreateSubTasks}
                                 />
                             ))}
                         </div>

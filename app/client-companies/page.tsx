@@ -13,6 +13,7 @@ import {
     RefreshCw,
     Trash2
 } from "lucide-react";
+import Link from "next/link";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { ADMIN_ROLES } from "@/lib/roles";
 import { ClientCompanyDeleteDialog } from "@/components/client-companies/ClientCompanyDeleteDialog";
@@ -162,7 +163,9 @@ export default function ClientCompaniesPage() {
                                     companies.map((company) => (
                                         <tr key={company.id}>
                                             <td className="px-5 py-4 text-sm font-medium text-gray-900">
-                                                {company.name}
+                                                <Link href={`/client-companies/${company.id}`} className="text-blue-700 hover:text-blue-900 hover:underline">
+                                                    {company.name}
+                                                </Link>
                                             </td>
 
                                             <td className="px-5 py-4 text-sm text-gray-600">

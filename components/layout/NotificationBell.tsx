@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, CheckCheck, CircleAlert, Clock3, MessageSquareText, UserRoundPlus } from "lucide-react";
+import { Bell, CheckCheck, CircleAlert, Clock3, ListPlus, MessageSquareText, UserRoundPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { notificationsService } from "@/services/notifications.service";
 import { NotificationItem } from "@/types/notification.types";
@@ -105,6 +105,7 @@ export function NotificationBell({ isWorker }: { isWorker: boolean }) {
 }
 
 function notificationIcon(type: string) {
+    if (type === "created") return <ListPlus size={17} />;
     if (type === "assignment") return <UserRoundPlus size={17} />;
     if (type === "comment") return <MessageSquareText size={17} />;
     if (type === "overdue") return <CircleAlert size={17} />;
@@ -112,6 +113,7 @@ function notificationIcon(type: string) {
 }
 
 function iconStyle(type: string) {
+    if (type === "created") return "bg-blue-100 text-blue-700";
     if (type === "overdue") return "bg-red-100 text-red-700";
     if (type === "comment") return "bg-violet-100 text-violet-700";
     if (type === "assignment") return "bg-emerald-100 text-emerald-700";
@@ -139,8 +141,16 @@ function workerNotificationHref(item: NotificationItem): string {
 }
 
 function splitNotificationMessage(message: string): { action: string; context: string[] } {
-    const contextMarker = "Proyecto: ";
-    const markerIndex = message.indexOf(contextMarker);
+    const lines = message.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (lines.length > 1) {
+        return { action: lines[0], context: lines.slice(1) };
+    }
+
+    const contextMarkers = ["Cliente: ", "Proyecto: "];
+    const markerIndex = contextMarkers
+        .map((marker) => message.indexOf(marker))
+        .filter((index) => index >= 0)
+        .sort((left, right) => left - right)[0] ?? -1;
 
     if (markerIndex === -1) {
         return { action: message, context: [] };
@@ -148,7 +158,7 @@ function splitNotificationMessage(message: string): { action: string; context: s
 
     return {
         action: message.slice(0, markerIndex).trim(),
-        context: `${contextMarker}${message.slice(markerIndex + contextMarker.length)}`
+        context: message.slice(markerIndex)
             .split(/\s+(?:·|Â·)\s+/)
             .filter(Boolean)
     };

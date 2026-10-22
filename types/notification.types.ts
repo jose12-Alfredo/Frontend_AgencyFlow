@@ -1,6 +1,6 @@
 export interface NotificationItem {
     id: string;
-    type: "assignment" | "comment" | "status" | "review" | "deadline" | "overdue" | string;
+    type: "created" | "assignment" | "comment" | "status" | "review" | "deadline" | "overdue" | string;
     title: string;
     message: string;
     resourceType: "task" | "subtask" | string | null;

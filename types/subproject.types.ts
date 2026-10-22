@@ -32,3 +32,19 @@ export interface SubProjectRequest {
     departmentId: string;
     assignedUserId?: string | null;
 }
+
+export interface SubProjectFormOptions {
+    departments: SubProjectDepartmentOption[];
+    users: SubProjectUserOption[];
+}
+
+export interface SubProjectDepartmentOption {
+    id: string;
+    name: string;
+}
+
+export interface SubProjectUserOption {
+    id: string;
+    firstName: string;
+    lastName: string;
+}

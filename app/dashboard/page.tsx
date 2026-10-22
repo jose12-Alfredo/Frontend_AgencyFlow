@@ -124,6 +124,8 @@ function buildDirectorCatalogs(
                 email: null,
                 roleId: "",
                 roleName: "Integrante",
+                jobPositionId: null,
+                jobPositionName: null,
                 clientCompanyId: null,
                 clientCompanyName: null
             });
@@ -140,6 +142,8 @@ function buildDirectorCatalogs(
                 email: null,
                 roleId: "",
                 roleName: "Integrante",
+                jobPositionId: null,
+                jobPositionName: null,
                 clientCompanyId: null,
                 clientCompanyName: null
             });
@@ -157,6 +161,8 @@ function buildDirectorCatalogs(
                 email: null,
                 roleId: "",
                 roleName: membership.userRoleName ?? "Integrante",
+                jobPositionId: null,
+                jobPositionName: null,
                 clientCompanyId: null,
                 clientCompanyName: null
             });

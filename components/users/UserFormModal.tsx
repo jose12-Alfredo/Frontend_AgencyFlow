@@ -12,23 +12,30 @@ import {
 import { ApiError } from "@/services/api";
 import { usersService } from "@/services/users.service";
 import { ClientCompany } from "@/types/client-company.types";
+import { JobPosition } from "@/types/job-position.types";
 import { Role } from "@/types/role.types";
-import { User } from "@/types/user.types";
+import { User, UserRequest } from "@/types/user.types";
 
 interface UserFormModalProps {
     user: User | null;
     roles: Role[];
+    jobPositions: JobPosition[];
     companies: ClientCompany[];
     onClose: () => void;
     onSaved: () => Promise<void>;
+    onCreate?: (request: UserRequest) => Promise<unknown>;
+    showClientCompany?: boolean;
 }
 
 export function UserFormModal({
     user,
     roles,
+    jobPositions,
     companies,
     onClose,
-    onSaved
+    onSaved,
+    onCreate,
+    showClientCompany = true
 }: UserFormModalProps) {
     const [firstName, setFirstName] = useState(user?.firstName ?? "");
     const [lastName, setLastName] = useState(user?.lastName ?? "");
@@ -36,6 +43,9 @@ export function UserFormModal({
     const [email, setEmail] = useState(user?.email ?? "");
     const [password, setPassword] = useState("");
     const [roleId, setRoleId] = useState(user?.roleId ?? "");
+    const [jobPositionId, setJobPositionId] = useState(
+        user?.jobPositionId ?? ""
+    );
     const [clientCompanyId, setClientCompanyId] = useState(
         user?.clientCompanyId ?? ""
     );
@@ -44,6 +54,8 @@ export function UserFormModal({
     const [isSaving, setIsSaving] = useState(false);
 
     const isEditing = user !== null;
+    const selectedRole = roles.find((role) => role.id === roleId);
+    const isClient = selectedRole?.name.trim().toLowerCase() === "cliente";
 
     async function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -54,7 +66,12 @@ export function UserFormModal({
         }
 
         if (!roleId) {
-            setError("Debes seleccionar un rol.");
+            setError("Debes seleccionar un perfil de acceso.");
+            return;
+        }
+
+        if (!isClient && !jobPositionId) {
+            setError("Debes seleccionar un cargo.");
             return;
         }
 
@@ -74,13 +91,15 @@ export function UserFormModal({
                 email: email.trim() || null,
                 password: password || null,
                 roleId,
+                jobPositionId: jobPositionId || null,
                 clientCompanyId: clientCompanyId || null
             };
 
             if (isEditing) {
                 await usersService.update(user.id, request);
             } else {
-                await usersService.create(request);
+                if (onCreate) await onCreate(request);
+                else await usersService.create(request);
             }
 
             await onSaved();
@@ -271,10 +290,39 @@ export function UserFormModal({
                     <div className="grid gap-5 sm:grid-cols-2">
                         <div>
                             <label
+                                htmlFor="user-job-position"
+                                className="mb-2 block text-sm font-medium text-gray-700"
+                            >
+                                Cargo{isClient ? " (opcional)" : ""}
+                            </label>
+
+                            <select
+                                id="user-job-position"
+                                value={jobPositionId}
+                                onChange={(event) =>
+                                    setJobPositionId(event.target.value)
+                                }
+                                required={!isClient}
+                                className="h-11 w-full rounded-md border border-gray-300 bg-white px-3 text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                            >
+                                <option value="">Seleccionar cargo</option>
+                                {jobPositions.map((jobPosition) => (
+                                    <option key={jobPosition.id} value={jobPosition.id}>
+                                        {jobPosition.name}
+                                    </option>
+                                ))}
+                            </select>
+                            <p className="mt-1.5 text-xs text-gray-500">
+                                Nombre que verá la persona en el sistema.
+                            </p>
+                        </div>
+
+                        <div>
+                            <label
                                 htmlFor="user-role"
                                 className="mb-2 block text-sm font-medium text-gray-700"
                             >
-                                Rol
+                                Perfil de acceso
                             </label>
 
                             <select
@@ -286,15 +334,20 @@ export function UserFormModal({
                                 required
                                 className="h-11 w-full rounded-md border border-gray-300 bg-white px-3 text-gray-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
                             >
-                                <option value="">Seleccionar rol</option>
+                                <option value="">Seleccionar perfil</option>
                                 {roles.map((role) => (
                                     <option key={role.id} value={role.id}>
                                         {role.name}
                                     </option>
                                 ))}
                             </select>
+                            <p className="mt-1.5 text-xs text-gray-500">
+                                Define las funciones base y la seguridad.
+                            </p>
                         </div>
+                    </div>
 
+                    {showClientCompany && <div>
                         <div>
                             <label
                                 htmlFor="user-company"
@@ -322,7 +375,7 @@ export function UserFormModal({
                                 ))}
                             </select>
                         </div>
-                    </div>
+                    </div>}
 
                     <footer className="flex justify-end gap-3 border-t border-gray-200 pt-5">
                         <button
@@ -336,7 +389,7 @@ export function UserFormModal({
 
                         <button
                             type="submit"
-                            disabled={isSaving || roles.length === 0}
+                            disabled={isSaving || roles.length === 0 || (!isClient && jobPositions.length === 0)}
                             className="h-10 rounded-md bg-gray-900 px-4 text-sm font-semibold text-white transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                             {isSaving ? "Guardando..." : "Guardar usuario"}

@@ -6,6 +6,8 @@ export interface User {
     email: string | null;
     roleId: string;
     roleName: string;
+    jobPositionId: string | null;
+    jobPositionName: string | null;
     clientCompanyId: string | null;
     clientCompanyName: string | null;
 }
@@ -17,5 +19,6 @@ export interface UserRequest {
     email?: string | null;
     password?: string | null;
     roleId: string;
+    jobPositionId?: string | null;
     clientCompanyId?: string | null;
 }

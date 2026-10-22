@@ -1,5 +1,6 @@
 import { User } from "@/types/user.types";
 import { DepartmentUser } from "@/types/department-user.types";
+import { AuthUser } from "@/types/auth.types";
 
 /**
  * La API determina la elegibilidad del responsable por el nombre de rol.
@@ -12,6 +13,22 @@ export function isAssignableUser(user: User): boolean {
 
 export function getAssignableUsers(users: User[]): User[] {
     return users.filter(isAssignableUser);
+}
+
+export function authUserToAssignableUser(user: AuthUser): User {
+    return {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phone: null,
+        email: user.email,
+        roleId: "",
+        roleName: user.roleName,
+        jobPositionId: user.jobPositionId,
+        jobPositionName: user.jobPositionName,
+        clientCompanyId: null,
+        clientCompanyName: null
+    };
 }
 
 export function membershipsToAssignableUsers(
@@ -30,6 +47,8 @@ export function membershipsToAssignableUsers(
             email: null,
             roleId: "",
             roleName: membership.userRoleName,
+            jobPositionId: null,
+            jobPositionName: null,
             clientCompanyId: null,
             clientCompanyName: null
         });

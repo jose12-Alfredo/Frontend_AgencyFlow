@@ -15,6 +15,7 @@ interface UserListParams {
     apellido?: string;
     email?: string;
     roleId?: string;
+    jobPositionId?: string;
     clientCompanyId?: string;
 
     [key: string]:

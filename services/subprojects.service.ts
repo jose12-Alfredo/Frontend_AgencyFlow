@@ -5,6 +5,7 @@ import {
 import { PagedResult } from "@/types/common.types";
 import {
     SubProject,
+    SubProjectFormOptions,
     SubProjectRequest
 } from "@/types/subproject.types";
 
@@ -40,6 +41,10 @@ export const subProjectsService = {
 
     getById(id: string): Promise<SubProject> {
         return apiFetch<SubProject>(`${BASE_PATH}/${id}`);
+    },
+
+    getFormOptions(projectId: string): Promise<SubProjectFormOptions> {
+        return apiFetch<SubProjectFormOptions>(`${BASE_PATH}/form-options${buildQuery({ projectId })}`);
     },
 
     create(request: SubProjectRequest): Promise<SubProject> {

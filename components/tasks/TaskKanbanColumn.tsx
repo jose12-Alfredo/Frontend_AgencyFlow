@@ -71,6 +71,30 @@ function getSchedule(task: TaskItem) {
     };
 }
 
+function TaskDetail({ detail }: { detail: string }) {
+    const parts = detail.split(/(https?:\/\/[^\s]+)/g);
+
+    return (
+        <div className="mt-2 text-xs leading-5">
+            <p className="font-semibold text-gray-700">Detalle:</p>
+            <p className="whitespace-pre-wrap break-words text-gray-600">
+                {parts.map((part, index) => part.startsWith("http://") || part.startsWith("https://") ? (
+                    <a
+                        key={`${part}-${index}`}
+                        href={part}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-900"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        {part}
+                    </a>
+                ) : part)}
+            </p>
+        </div>
+    );
+}
+
 function TaskCard({
     task,
     onEdit,
@@ -130,6 +154,8 @@ function TaskCard({
                 {task.projectTitle} <span aria-hidden="true">/</span>{" "}
                 {task.subProjectTitle}
             </p>
+
+            {task.detail && <TaskDetail detail={task.detail} />}
 
             <div className="mt-4 flex items-center justify-between text-xs">
                 <span className="font-medium text-gray-600">Progreso</span>

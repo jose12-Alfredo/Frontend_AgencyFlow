@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, ReactNode, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { Search, UserPlus, UserRoundCheck, X } from "lucide-react";
 import { ApiError } from "@/services/api";
 import {
@@ -15,6 +15,7 @@ interface Props {
     roles: Role[];
     onClose: () => void;
     onSaved: () => Promise<void>;
+    existingOnly?: boolean;
 }
 
 type MemberMode = "new" | "existing";
@@ -26,10 +27,11 @@ export function DirectorTeamMemberDialog({
     departmentName,
     roles,
     onClose,
-    onSaved
+    onSaved,
+    existingOnly = false
 }: Props) {
     const allowedRoles = roles.filter((role) => allowedNames.has(role.name));
-    const [mode, setMode] = useState<MemberMode>("new");
+    const [mode, setMode] = useState<MemberMode>(existingOnly ? "existing" : "new");
     const [firstName, setFirstName] = useState("");
     const [lastName, setLastName] = useState("");
     const [phone, setPhone] = useState("");
@@ -66,6 +68,21 @@ export function DirectorTeamMemberDialog({
             setSearching(false);
         }
     }
+
+    useEffect(() => {
+        if (!existingOnly) return;
+        let active = true;
+        void directorTeamService.getCandidates({ departmentId, search: "", page: 1, pageSize: 50 })
+            .then((result) => {
+                if (!active) return;
+                setCandidates(result.items);
+                setCandidatesLoaded(true);
+            })
+            .catch((cause) => {
+                if (active) setError(cause instanceof ApiError ? cause.message : "No se pudieron cargar los usuarios existentes.");
+            });
+        return () => { active = false; };
+    }, [existingOnly, departmentId]);
 
     function selectMode(nextMode: MemberMode) {
         setMode(nextMode);
@@ -146,7 +163,7 @@ export function DirectorTeamMemberDialog({
                     </button>
                 </header>
 
-                <div className="grid grid-cols-2 gap-2 bg-gray-50 px-6 py-4">
+                {!existingOnly && <div className="grid grid-cols-2 gap-2 bg-gray-50 px-6 py-4">
                     <ModeButton
                         active={mode === "new"}
                         icon={<UserPlus size={18} />}
@@ -159,7 +176,7 @@ export function DirectorTeamMemberDialog({
                         label="Usuario existente"
                         onClick={() => selectMode("existing")}
                     />
-                </div>
+                </div>}
 
                 <div className="overflow-y-auto px-6 py-5">
                     {error && (

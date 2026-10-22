@@ -2,7 +2,6 @@
 
 import {
     FormEvent,
-    useEffect,
     useState
 } from "react";
 import { X } from "lucide-react";
@@ -12,12 +11,8 @@ import { SubProject } from "@/types/subproject.types";
 import { TaskItem } from "@/types/task.types";
 import { User } from "@/types/user.types";
 import {
-    getAssignableUsers,
-    membershipsToAssignableUsers
+    getAssignableUsers
 } from "@/lib/assignment";
-import { departmentUsersService } from "@/services/department-users.service";
-import { useAuth } from "@/context/AuthContext";
-import { isAdministrator } from "@/lib/roles";
 
 interface TaskFormModalProps {
     task: TaskItem | null;
@@ -36,12 +31,7 @@ export function TaskFormModal({
     onClose,
     onSaved
 }: TaskFormModalProps) {
-    const { user } = useAuth();
-    const canAdminister = isAdministrator(user?.roleName);
-    const [teamUsers, setTeamUsers] = useState<User[]>([]);
-    const assignableUsers = getAssignableUsers(
-        canAdminister ? users : teamUsers
-    );
+    const assignableUsers = getAssignableUsers(users);
     const initialAssignedUserId = task?.assignedUserId ?? "";
     const hasInvalidHistoricAssignee = Boolean(
         initialAssignedUserId &&
@@ -61,33 +51,6 @@ export function TaskFormModal({
     const [isSaving, setIsSaving] = useState(false);
 
     const isEditing = task !== null;
-
-    useEffect(() => {
-        if (canAdminister) return;
-
-        const departmentId = subProjects.find(
-            (subProject) => subProject.id === subProjectId
-        )?.departmentId;
-        let cancelled = false;
-
-        const request = departmentId
-            ? departmentUsersService.getAll({
-                page: 1,
-                pageSize: 100,
-                departmentId
-            }).then((result) => membershipsToAssignableUsers(result.items))
-            : Promise.resolve([] as User[]);
-
-        void request.then((members) => {
-            if (!cancelled) setTeamUsers(members);
-        }).catch(() => {
-            if (!cancelled) setTeamUsers([]);
-        });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [canAdminister, subProjectId, subProjects]);
 
     async function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();

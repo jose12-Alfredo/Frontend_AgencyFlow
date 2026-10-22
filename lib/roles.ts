@@ -20,6 +20,10 @@ export function isWorker(roleName: string | undefined): boolean {
     return hasRole(roleName, WORKER_ROLES);
 }
 
+export function hasPermission(permissions: string[] | undefined, code: string): boolean {
+    return Boolean(permissions?.includes(code));
+}
+
 export function getRoleHome(roleName: string): string {
     if (isProjectManager(roleName)) return "/dashboard";
     return "/my-work";

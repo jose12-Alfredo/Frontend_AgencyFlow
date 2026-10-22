@@ -1,13 +1,16 @@
 "use client";
 
-import { ReactNode, useState } from "react";
+import { ReactNode, useLayoutEffect, useRef, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
     Building2,
     BarChart3,
+    BriefcaseBusiness,
     CalendarDays,
     CheckCircle2,
+    ChevronDown,
     FolderKanban,
     Handshake,
     LayoutDashboard,
@@ -24,7 +27,7 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "@/context/AuthContext";
-import { hasRole, isAdministrator, isProjectManager, isWorker, REPORT_ROLES } from "@/lib/roles";
+import { hasPermission, hasRole, isAdministrator, isProjectManager, isWorker, REPORT_ROLES } from "@/lib/roles";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 
 interface AppShellProps {
@@ -36,114 +39,130 @@ const navigation: Array<{
     href: string;
     icon: typeof LayoutDashboard;
     visible: (roleName: string | undefined) => boolean;
+    permission?: string;
+    requiredPermissions?: string[];
 }> = [
+    {
+        name: "Permisos",
+        href: "/permissions",
+        icon: ShieldCheck,
+        visible: (roleName) => roleName === "SuperUsuario",
+        permission: "permissions.view"
+    },
     {
         name: "Reportes",
         href: "/reports",
         icon: BarChart3,
-        visible: (roleName) => hasRole(roleName, REPORT_ROLES)
+        visible: (roleName) => hasRole(roleName, REPORT_ROLES), permission: "productivity.delays.view"
     },
     {
         name: "Dashboard",
         href: "/dashboard",
         icon: LayoutDashboard,
-        visible: isProjectManager
+        visible: isProjectManager, permission: "dashboard.view"
     },
     {
         name: "Roles",
         href: "/roles",
         icon: ShieldCheck,
-        visible: isAdministrator
+        visible: isAdministrator, permission: "roles.view"
+    },
+    {
+        name: "Cargos",
+        href: "/job-positions",
+        icon: BriefcaseBusiness,
+        visible: isAdministrator, permission: "job_positions.view"
     },
     {
         name: "Departamentos",
         href: "/departments",
         icon: Building2,
-        visible: isAdministrator
+        visible: isAdministrator, permission: "departments.view"
     },
     {
         name: "Empresas cliente",
         href: "/client-companies",
         icon: Handshake,
-        visible: isAdministrator
+        visible: isAdministrator, permission: "client_companies.view"
     },
     {
         name: "Tipos de proyecto",
         href: "/project-types",
         icon: Tags,
-        visible: isAdministrator
+        visible: isAdministrator, permission: "project_types.view"
     },
     {
         name: "Usuarios",
         href: "/users",
         icon: UsersRound,
-        visible: isAdministrator
+        visible: isAdministrator, permission: "users.view"
     },
     {
         name: "Asignaciones",
         href: "/department-users",
         icon: Network,
-        visible: isAdministrator
-    },
-    {
-        name: "Accesos de directores",
-        href: "/director-accesses",
-        icon: ShieldCheck,
-        visible: isAdministrator
+        visible: isAdministrator, permission: "department_memberships.view"
     },
     {
         name: "Proyectos",
         href: "/projects",
         icon: FolderKanban,
-        visible: isProjectManager
+        visible: isProjectManager,
+        permission: "projects.view"
+    },
+    {
+        name: "Asignaciones de proyectos",
+        href: "/project-assignments",
+        icon: UsersRound,
+        visible: () => true,
+        permission: "project_assignments.view"
     },
     {
         name: "Mi equipo",
         href: "/my-team",
         icon: UsersRound,
-        visible: (roleName) => roleName === "Director"
+        visible: (roleName) => roleName === "Director", permission: "director_team.view"
     },
     {
         name: "Mis tareas",
         href: "/my-work/tasks",
         icon: ListChecks,
-        visible: isWorker
+        visible: isWorker,
+        permission: "tasks.view"
     },
     {
         name: "Mis subtareas",
         href: "/my-work/subtasks",
         icon: ListTree,
-        visible: isWorker
+        visible: isWorker,
+        permission: "subtasks.view"
     },
     {
         name: "Próximos vencimientos",
         href: "/my-work/tasks?view=due",
         icon: CalendarDays,
-        visible: isWorker
-    },
-    {
-        name: "Completadas",
-        href: "/my-work/tasks?view=completed",
-        icon: CheckCircle2,
-        visible: isWorker
+        visible: isWorker,
+        permission: "tasks.view"
     },
     {
         name: "Subproyectos",
         href: "/subprojects",
         icon: Workflow,
-        visible: isProjectManager
+        visible: isProjectManager, permission: "subprojects.view"
     },
     {
         name: "Tareas",
         href: "/tasks",
         icon: ListChecks,
-        visible: isProjectManager
+        visible: isProjectManager,
+        requiredPermissions: ["tasks.view", "subprojects.view"]
     },
     {
         name: "Subtareas",
         href: "/subtasks",
         icon: ListTree,
-        visible: isProjectManager
+        visible: isProjectManager,
+        requiredPermissions: ["subtasks.view", "tasks.view", "subprojects.view"]
     }
 ];
 
@@ -154,7 +173,33 @@ export function AppShell({
     const router = useRouter();
     const { user, logout } = useAuth();
     const [isMobileOpen, setIsMobileOpen] = useState(false);
+    const navigationRef = useRef<HTMLElement>(null);
     const isReportsPage = pathname.startsWith("/reports");
+    const isDashboardPage = pathname.startsWith("/dashboard");
+    const hasTaskManagementAccess = ["tasks.view", "subprojects.view"]
+        .every((permission) => hasPermission(user?.permissions, permission));
+    const hasSubTaskManagementAccess = ["subtasks.view", "tasks.view", "subprojects.view"]
+        .every((permission) => hasPermission(user?.permissions, permission));
+
+    useLayoutEffect(() => {
+        const savedScrollTop = window.sessionStorage.getItem("agencyflow:sidebar-scroll-top");
+        const scrollTop = Number(savedScrollTop);
+
+        if (Number.isFinite(scrollTop) && navigationRef.current) {
+            navigationRef.current.scrollTop = scrollTop;
+        }
+    }, []);
+
+    function preserveNavigationScroll() {
+        if (navigationRef.current) {
+            window.sessionStorage.setItem("agencyflow:sidebar-scroll-top", String(navigationRef.current.scrollTop));
+        }
+    }
+
+    function handleNavigation() {
+        preserveNavigationScroll();
+        setIsMobileOpen(false);
+    }
 
     function handleLogout() {
         logout();
@@ -173,25 +218,27 @@ export function AppShell({
             )}
 
             <aside
-                className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-slate-700 bg-[#172938] text-white transition-transform lg:translate-x-0 ${
+                className={`fixed inset-y-0 left-0 z-40 w-64 flex-col border-r border-white/[0.08] bg-[#0f2638] text-white transition-transform lg:flex lg:translate-x-0 ${
                     isMobileOpen
-                        ? "translate-x-0"
-                        : "-translate-x-full"
+                        ? "flex translate-x-0"
+                        : "hidden -translate-x-full"
                 }`}
             >
-                <div className="flex h-20 items-center justify-between border-b border-white/10 px-5">
+                <div className="flex h-20 items-center justify-between border-b border-white/[0.08] px-5">
                     <Link
                         href="/dashboard"
-                        className="flex items-center gap-3"
-                        onClick={() => setIsMobileOpen(false)}
+                        className="relative h-8 w-[210px] overflow-hidden"
+                        scroll={false}
+                        onClick={handleNavigation}
                     >
-                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-400 to-blue-700 text-sm font-bold text-white">
-                            A
-                        </span>
-
-                        <span className="text-xl font-semibold text-white">
-                            AgencyFlow
-                        </span>
+                        <Image
+                            src="/images/login/logo-flow.png"
+                            alt="C&P Flow"
+                            width={1983}
+                            height={793}
+                            priority
+                            className="absolute left-0 top-0 h-auto w-full -translate-y-[24%]"
+                        />
                     </Link>
 
                     <button
@@ -199,37 +246,74 @@ export function AppShell({
                         title="Cerrar menú"
                         aria-label="Cerrar menú"
                         onClick={() => setIsMobileOpen(false)}
-                        className="rounded-md p-2 text-gray-500 hover:bg-gray-100 lg:hidden"
+                        className="rounded-md p-2 text-[#94a3b8] transition-colors hover:bg-white/[0.05] hover:text-white lg:hidden"
                     >
                         <X size={20} />
                     </button>
                 </div>
 
-                <nav className="flex-1 overflow-y-auto px-3 py-5">
-                            <p className="mb-2 px-3 text-xs font-semibold uppercase text-gray-400">
-                        {isWorker(user?.roleName) ? "Trabajo" : "General"}
+                <nav
+                    ref={navigationRef}
+                    className="flex-1 overflow-y-auto px-2 py-5"
+                    style={{
+                        scrollbarWidth: "thin",
+                        scrollbarColor: "rgba(148, 163, 184, 0.35) transparent"
+                    }}
+                >
+                            <p className="mb-4 px-3.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#94a3b8]">
+                        Navegación
                     </p>
 
-                    <ul>
-                        {navigation.filter((item) => item.visible(user?.roleName)).map((item) => {
+                    <ul className="space-y-1">
+                        {navigation.filter((item) => {
+                            const hasRequiredPermission = item.requiredPermissions
+                                ? item.requiredPermissions.every((permission) =>
+                                    hasPermission(user?.permissions, permission)
+                                )
+                                : item.permission
+                                    ? hasPermission(user?.permissions, item.permission)
+                                    : true;
+                            const isPersonalWorkEntry = item.href.startsWith("/my-work");
+
+                            if (
+                                isPersonalWorkEntry &&
+                                (
+                                    item.href.startsWith("/my-work/tasks")
+                                        ? hasTaskManagementAccess
+                                        : hasSubTaskManagementAccess
+                                )
+                            ) {
+                                return false;
+                            }
+
+                            return hasRequiredPermission && (
+                                item.visible(user?.roleName) || !isPersonalWorkEntry
+                            );
+                        })
+                            .map((item) => {
                             const Icon = item.icon;
-                            const isActive = pathname === item.href.split("?")[0] &&
-                                (item.href === "/my-work" ? !window.location.search : window.location.search === item.href.slice(item.href.indexOf("?")));
+                            const [itemPath, itemQuery] = item.href.split("?");
+                            const isActive = pathname === itemPath && (
+                                itemQuery
+                                    ? window.location.search === `?${itemQuery}`
+                                    : item.href === "/my-work/tasks"
+                                        ? !window.location.search
+                                        : true
+                            );
 
                             return (
                                 <li key={item.href}>
                                     <Link
                                         href={item.href}
-                                        onClick={() =>
-                                            setIsMobileOpen(false)
-                                        }
-                                        className={`flex h-11 items-center gap-3 rounded-md px-3 text-sm font-medium transition ${
-                                            isActive
-                                                ? "bg-blue-500/30 text-white ring-1 ring-blue-400/20"
-                                                : "text-slate-200 hover:bg-white/10 hover:text-white"
-                                        }`}
+                                        scroll={false}
+                                        onClick={handleNavigation}
+                                        className={`flex h-[46px] items-center gap-3.5 rounded-lg px-3.5 text-sm font-medium transition-colors duration-150 ${
+                                             isActive
+                                                 ? "bg-gradient-to-r from-[#6d32f5] to-[#4930b8] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                                                 : "text-[#e6eef7] hover:bg-white/[0.05] hover:text-white"
+                                         }`}
                                     >
-                                        <Icon size={19} />
+                                        <Icon size={20} strokeWidth={1.8} />
                                         {item.name}
                                     </Link>
                                 </li>
@@ -238,21 +322,30 @@ export function AppShell({
                     </ul>
                 </nav>
 
-                <div className="border-t border-white/10 p-4">
-                    <div className="mb-4 min-w-0">
-                        <p className="truncate text-sm font-medium text-white">
-                            {user?.firstName} {user?.lastName}
-                        </p>
+                <div className="border-t border-white/[0.08] p-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                        <span
+                            aria-hidden="true"
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#6d32f5] to-[#4f2acd] text-sm font-bold text-white"
+                        >
+                            {user?.firstName?.trim().charAt(0).toUpperCase() || "U"}
+                        </span>
 
-                        <p className="truncate text-xs text-slate-300">
-                            {user?.roleName}
-                        </p>
+                        <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-white">
+                                {user?.firstName} {user?.lastName}
+                            </p>
+
+                            <p className="truncate text-xs text-[#94a3b8]">
+                                {user?.jobPositionName || user?.roleName}
+                            </p>
+                        </div>
                     </div>
 
                     <button
                         type="button"
                         onClick={handleLogout}
-                        className="flex h-10 w-full items-center gap-3 rounded-md px-3 text-sm font-medium text-red-600 transition hover:bg-red-50"
+                        className="mt-3 flex h-10 w-full items-center gap-3 rounded-lg px-2 text-sm font-medium text-[#ef4444] transition-colors hover:bg-red-950/30 hover:text-red-300"
                     >
                         <LogOut size={18} />
                         Cerrar sesión
@@ -272,21 +365,39 @@ export function AppShell({
                         <Menu size={22} />
                     </button>
 
-                    <div className="ml-auto flex items-center gap-3">
+                    <div className="ml-auto flex items-center gap-4">
                         <NotificationBell isWorker={isWorker(user?.roleName)} />
-                        <div className="text-right">
-                        <p className="text-sm font-medium text-gray-900">
-                            {user?.firstName} {user?.lastName}
-                        </p>
 
-                        <p className="text-xs text-gray-500">
-                            {user?.roleName}
-                        </p>
+                        <span className="h-8 w-px bg-gray-200" aria-hidden="true" />
+
+                        <div className="flex min-w-0 items-center gap-3">
+                            <span
+                                aria-hidden="true"
+                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#4338ca] to-[#5b2bea] text-sm font-bold text-white shadow-sm"
+                            >
+                                {user?.firstName?.trim().charAt(0).toUpperCase() || "U"}
+                            </span>
+
+                            <div className="hidden min-w-0 text-left sm:block">
+                                <p className="max-w-40 truncate text-sm font-semibold leading-5 text-[#111a3b]">
+                                    {user?.firstName} {user?.lastName}
+                                </p>
+
+                                <p className="max-w-40 truncate text-xs leading-4 text-[#66718e]">
+                                    {user?.jobPositionName || user?.roleName}
+                                </p>
+                            </div>
+
+                            <ChevronDown className="hidden h-4 w-4 shrink-0 text-[#536080] sm:block" aria-hidden="true" />
                         </div>
                     </div>
                 </header>
 
-                <main className={isReportsPage ? "w-full px-6 pb-5 pt-6" : "mx-auto max-w-7xl p-4 sm:p-6"}>
+                <main className={isReportsPage
+                    ? "w-full px-6 pb-5 pt-6"
+                    : isDashboardPage
+                        ? "mx-auto w-full p-4 xl:h-[calc(100dvh-4rem)] xl:overflow-hidden xl:px-5 xl:py-4"
+                        : "mx-auto max-w-7xl p-4 sm:p-6"}>
                     {isWorker(user?.roleName) && pathname.startsWith("/my-work") && (
                         <nav aria-label="Mi trabajo" className="mb-5 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
                             <Link href="/my-work/tasks" className={`inline-flex h-10 items-center gap-2 rounded-md px-4 text-sm font-semibold ${pathname.endsWith("/subtasks") ? "text-gray-600 hover:bg-white" : "bg-white text-blue-700 shadow-sm ring-1 ring-blue-100"}`}>

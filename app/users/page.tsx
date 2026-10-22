@@ -21,16 +21,22 @@ import { UserFormModal } from "@/components/users/UserFormModal";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/services/api";
 import { clientCompaniesService } from "@/services/client-companies.service";
+import { jobPositionsService } from "@/services/job-positions.service";
 import { rolesService } from "@/services/roles.service";
 import { usersService } from "@/services/users.service";
 import { ClientCompany } from "@/types/client-company.types";
+import { JobPosition } from "@/types/job-position.types";
 import { Role } from "@/types/role.types";
 import { User } from "@/types/user.types";
 
 export default function UsersPage() {
     const { user: currentUser } = useAuth();
+    const canCreate = currentUser?.permissions?.includes("users.create") ?? false;
+    const canUpdate = currentUser?.permissions?.includes("users.update") ?? false;
+    const canDelete = currentUser?.permissions?.includes("users.delete") ?? false;
     const [users, setUsers] = useState<User[]>([]);
     const [roles, setRoles] = useState<Role[]>([]);
+    const [jobPositions, setJobPositions] = useState<JobPosition[]>([]);
     const [companies, setCompanies] = useState<ClientCompany[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -43,10 +49,11 @@ export default function UsersPage() {
         setError(null);
 
         try {
-            const [usersResult, rolesResult, companiesResult] =
+            const [usersResult, rolesResult, jobPositionsResult, companiesResult] =
                 await Promise.all([
                     usersService.getAll({ page: 1, pageSize: 100 }),
                     rolesService.getAll({ page: 1, pageSize: 100 }),
+                    jobPositionsService.getAll({ page: 1, pageSize: 100 }),
                     clientCompaniesService.getAll({
                         page: 1,
                         pageSize: 100
@@ -55,6 +62,7 @@ export default function UsersPage() {
 
             setUsers(usersResult.items);
             setRoles(rolesResult.items);
+            setJobPositions(jobPositionsResult.items);
             setCompanies(companiesResult.items);
         } catch (error) {
             if (error instanceof ApiError) {
@@ -92,7 +100,7 @@ export default function UsersPage() {
                     </div>
 
                     <div className="flex shrink-0 items-center gap-2">
-                        <button
+                        {canCreate && <button
                             type="button"
                             onClick={() => {
                                 setSelectedUser(null);
@@ -103,7 +111,7 @@ export default function UsersPage() {
                         >
                             <Plus size={18} />
                             Nuevo usuario
-                        </button>
+                        </button>}
 
                         <button
                             type="button"
@@ -132,7 +140,7 @@ export default function UsersPage() {
 
                 <section className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
                     <div className="overflow-x-auto">
-                        <table className="w-full min-w-[950px] border-collapse text-left">
+                        <table className="w-full min-w-[1080px] border-collapse text-left">
                             <thead className="border-b border-gray-200 bg-gray-50">
                                 <tr>
                                     <th className="px-5 py-3 text-xs font-semibold uppercase text-gray-500">
@@ -144,7 +152,11 @@ export default function UsersPage() {
                                     </th>
 
                                     <th className="px-5 py-3 text-xs font-semibold uppercase text-gray-500">
-                                        Rol
+                                        Cargo
+                                    </th>
+
+                                    <th className="px-5 py-3 text-xs font-semibold uppercase text-gray-500">
+                                        Perfil de acceso
                                     </th>
 
                                     <th className="px-5 py-3 text-xs font-semibold uppercase text-gray-500">
@@ -161,7 +173,7 @@ export default function UsersPage() {
                                 {isLoading ? (
                                     <tr>
                                         <td
-                                            colSpan={5}
+                                            colSpan={6}
                                             className="px-5 py-10 text-center text-sm text-gray-500"
                                         >
                                             Cargando usuarios...
@@ -170,7 +182,7 @@ export default function UsersPage() {
                                 ) : users.length === 0 ? (
                                     <tr>
                                         <td
-                                            colSpan={5}
+                                            colSpan={6}
                                             className="px-5 py-10 text-center text-sm text-gray-500"
                                         >
                                             No existen usuarios registrados.
@@ -223,6 +235,12 @@ export default function UsersPage() {
                                                 </td>
 
                                                 <td className="px-5 py-4 text-sm text-gray-700">
+                                                    {user.jobPositionName || (
+                                                        <span className="text-amber-700">Sin cargo</span>
+                                                    )}
+                                                </td>
+
+                                                <td className="px-5 py-4 text-sm text-gray-700">
                                                     {user.roleName}
                                                 </td>
 
@@ -233,7 +251,7 @@ export default function UsersPage() {
 
                                                 <td className="px-5 py-4 text-right">
                                                     <div className="flex items-center justify-end gap-1">
-                                                        <button
+                                                        {canUpdate && <button
                                                             type="button"
                                                             title="Editar usuario"
                                                             aria-label={`Editar ${user.firstName} ${user.lastName}`}
@@ -248,9 +266,9 @@ export default function UsersPage() {
                                                             className="rounded-md p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-900"
                                                         >
                                                             <Pencil size={18} />
-                                                        </button>
+                                                        </button>}
 
-                                                        <button
+                                                        {canDelete && <button
                                                             type="button"
                                                             title={isCurrentUser
                                                                 ? "No puedes eliminar tu sesión"
@@ -265,7 +283,7 @@ export default function UsersPage() {
                                                             className="rounded-md p-2 text-gray-500 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30"
                                                         >
                                                             <Trash2 size={18} />
-                                                        </button>
+                                                        </button>}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -281,6 +299,7 @@ export default function UsersPage() {
                     <UserFormModal
                         user={selectedUser}
                         roles={roles}
+                        jobPositions={jobPositions}
                         companies={companies}
                         onClose={() => {
                             setIsFormOpen(false);

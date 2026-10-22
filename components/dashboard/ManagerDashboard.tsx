@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
     AlertTriangle,
+    ArrowLeft,
     ArrowUpRight,
     CalendarClock,
     CheckCircle2,
@@ -32,6 +33,8 @@ import { ApiError } from "@/services/api";
 import { dashboardService } from "@/services/dashboard.service";
 import { DashboardFiltersBar } from "@/components/dashboard/DashboardFiltersBar";
 import { useDashboardFilters } from "@/context/DashboardFiltersContext";
+import { useAuth } from "@/context/AuthContext";
+import { DashboardOverview, type DashboardSection } from "@/components/dashboard/DashboardOverview";
 
 interface ManagerDashboardProps {
     data: DashboardData;
@@ -186,7 +189,9 @@ export function ManagerDashboard({
     refreshError,
     onRefresh
 }: ManagerDashboardProps) {
+    const { user } = useAuth();
     const { activeFilterCount, catalogs, filters } = useDashboardFilters();
+    const [activeSection, setActiveSection] = useState<DashboardSection>("overview");
     const clientsForProgress = useMemo(() => {
         const healthByClientId = new Map(
             clientHealth.map((client) => [client.clientId, client])
@@ -318,161 +323,30 @@ export function ManagerDashboard({
         setIsFinalizationOpen(true);
         void loadFinalizationSubTasks();
     }
-    const completionRate = new Intl.NumberFormat("es-BO", {
-        maximumFractionDigits: 1
-    }).format(data.kpis.globalProgressPercentage ?? data.kpis.completionRate);
-    const legacyCompletedSubTaskCount = data.workflowDistribution.find(
-        (item) => item.status === "Completada"
-    )?.count ?? 0;
-    const legacyTotalSubTaskCount = data.workflowDistribution.reduce(
-        (total, item) => total + item.count,
-        data.pausedTaskCount
-    );
-    const completedSubTaskCount = typeof data.kpis.completedSubTaskCount === "number"
-        ? data.kpis.completedSubTaskCount
-        : legacyCompletedSubTaskCount;
-    const totalSubTaskCount = typeof data.kpis.totalSubTaskCount === "number"
-        ? data.kpis.totalSubTaskCount
-        : legacyTotalSubTaskCount;
-    const overdueSubTaskCount = typeof data.kpis.overdueSubTaskCount === "number"
-        ? data.kpis.overdueSubTaskCount
-        : null;
-    const maximumDaysOverdue = Math.max(
-        0,
-        ...data.overdueTasks.map((task) => task.daysOverdue)
-    );
-    const unassignedTaskCount = data.kpis.unassignedTaskCount ?? data.unassignedTasks?.length ?? 0;
-    const unassignedSubTaskCount = data.kpis.unassignedSubTaskCount ?? data.unassignedSubTasks?.length ?? 0;
-    const stalledTaskCount = data.kpis.stalledTaskCount ?? data.stalledTasks.length;
-    const stalledSubTaskCount = data.kpis.stalledSubTaskCount ?? data.stalledSubTasks.length;
     const cycleTime = formatCycleTime(data.kpis.averageCycleTimeDays);
-    const bottleneckCounts = Array.from(
-        data.bottleneckItems.reduce((counts, item) => {
-            counts.set(item.status, (counts.get(item.status) ?? 0) + 1);
-            return counts;
-        }, new Map<string, number>()),
-        ([status, count]) => `${status} ${count}`
-    );
-    const kpis = [
-        {
-            label: "Tareas atrasadas",
-            value: data.kpis.overdueTaskCount.toString(),
-            detail: data.kpis.overdueTaskCount === 0
-                ? overdueSubTaskCount !== null && overdueSubTaskCount > 0
-                    ? `${overdueSubTaskCount} ${overdueSubTaskCount === 1 ? "subtarea atrasada" : "subtareas atrasadas"}`
-                    : "Sin tareas fuera de fecha"
-                : `${maximumDaysOverdue > 0
-                    ? `Máximo: ${maximumDaysOverdue} ${maximumDaysOverdue === 1 ? "día" : "días"}`
-                    : "Fuera de fecha"}${overdueSubTaskCount !== null && overdueSubTaskCount > 0
-                    ? ` · ${overdueSubTaskCount} ${overdueSubTaskCount === 1 ? "subtarea" : "subtareas"}`
-                    : ""}`,
-            icon: data.kpis.overdueTaskCount > 0 ||
-                (overdueSubTaskCount !== null && overdueSubTaskCount > 0)
-                ? AlertTriangle
-                : CheckCircle2,
-            accentClass: data.kpis.overdueTaskCount > 0 ||
-                (overdueSubTaskCount !== null && overdueSubTaskCount > 0)
-                ? "border-l-red-500"
-                : "border-l-emerald-500",
-            iconClass: data.kpis.overdueTaskCount > 0 ||
-                (overdueSubTaskCount !== null && overdueSubTaskCount > 0)
-                ? "bg-red-50 text-red-700"
-                : "bg-emerald-50 text-emerald-700",
-            valueClass: data.kpis.overdueTaskCount > 0
-                ? "text-red-700"
-                : "text-gray-950",
-            detailClass: data.kpis.overdueTaskCount > 0 ||
-                (overdueSubTaskCount !== null && overdueSubTaskCount > 0)
-                ? "text-red-700"
-                : "text-emerald-700",
-            detailView: data.kpis.overdueTaskCount > 0 || (overdueSubTaskCount ?? 0) > 0
-                ? "overdue" as const
-                : undefined,
-            actionLabel: data.kpis.overdueTaskCount > 0 || (overdueSubTaskCount ?? 0) > 0
-                ? "Ver detalle"
-                : undefined
-        },
-        {
-            label: "Sin responsable",
-            value: (unassignedTaskCount + unassignedSubTaskCount).toString(),
-            detail: `${unassignedTaskCount} ${unassignedTaskCount === 1 ? "tarea" : "tareas"} · ${unassignedSubTaskCount} ${unassignedSubTaskCount === 1 ? "subtarea" : "subtareas"}`,
-            icon: UsersRound,
-            accentClass: unassignedTaskCount + unassignedSubTaskCount > 0 ? "border-l-amber-500" : "border-l-emerald-500",
-            iconClass: unassignedTaskCount + unassignedSubTaskCount > 0 ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-700",
-            valueClass: "text-gray-950",
-            detailClass: unassignedTaskCount + unassignedSubTaskCount > 0 ? "text-amber-800" : "text-emerald-700",
-            detailView: unassignedTaskCount + unassignedSubTaskCount > 0 ? "unassigned" as const : undefined,
-            actionLabel: unassignedTaskCount + unassignedSubTaskCount > 0 ? "Asignar ahora" : undefined
-        },
-        {
-            label: "Tasa de finalización",
-            value: totalSubTaskCount === 0 ? "—" : `${completionRate}%`,
-            detail: (data.kpis.globalProgressPercentage ?? data.kpis.completionRate) === null
-                ? "Sin datos suficientes"
-                : `${completedSubTaskCount} de ${totalSubTaskCount} completadas`,
-            icon: CheckCircle2,
-            accentClass: totalSubTaskCount === 0
-                ? "border-l-gray-300"
-                : "border-l-emerald-500",
-            iconClass: totalSubTaskCount === 0
-                ? "bg-gray-100 text-gray-600"
-                : "bg-emerald-50 text-emerald-700",
-            valueClass: totalSubTaskCount === 0
-                ? "text-gray-400"
-                : "text-gray-950",
-            detailClass: "text-gray-500",
-            detailView: totalSubTaskCount > 0 && activeFilterCount === 0
-                ? "finalization" as const
-                : undefined,
-            actionLabel: totalSubTaskCount > 0 && activeFilterCount === 0
-                ? "Ver subtareas"
-                : undefined
-        },
-        {
-            label: "Trabajos sin movimiento",
-            value: (stalledTaskCount + stalledSubTaskCount).toString(),
-            detail: data.kpis.bottleneckCount === 0
-                ? "Sin subtareas en revisión o pausa"
-                : bottleneckCounts.join(" · ") || "En revisión o pausadas",
-            icon: TimerReset,
-            accentClass: stalledTaskCount + stalledSubTaskCount > 0
-                ? "border-l-amber-500"
-                : "border-l-gray-300",
-            iconClass: stalledTaskCount + stalledSubTaskCount > 0
-                ? "bg-amber-50 text-amber-800"
-                : "bg-gray-100 text-gray-600",
-            valueClass: "text-gray-950",
-            detailClass: stalledTaskCount + stalledSubTaskCount > 0
-                ? "text-amber-800"
-                : "text-gray-500",
-            detailView: stalledTaskCount + stalledSubTaskCount > 0
-                ? "bottlenecks" as const
-                : undefined,
-            actionLabel: stalledTaskCount + stalledSubTaskCount > 0
-                ? "Ver detalle"
-                : undefined
-        }
-    ];
-    const availablePeopleCount = data.workload.filter(
+    const internalWorkload = data.workload.filter((item) => item.roleName !== "Cliente");
+    const availablePeopleCount = internalWorkload.filter(
         (item) => item.activeTaskCount === 0 && item.activeSubTaskCount === 0
     ).length;
 
     return (
-        <div className="space-y-6">
-            <header className="flex flex-col gap-4 border-b border-gray-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-blue-700">
-                        Dashboard gerencial · Control de producción
-                    </p>
-                    <h1 className="mt-1 text-2xl font-semibold leading-tight text-gray-950">
-                        Salud del flujo de trabajo
+        <div className="flex min-h-0 flex-col gap-3 lg:h-full">
+            <header className="flex shrink-0 items-center justify-between gap-3">
+                <div className="min-w-0">
+                    {activeSection !== "overview" && (
+                        <button type="button" onClick={() => setActiveSection("overview")} className="mb-1 inline-flex items-center gap-1 text-xs font-semibold text-violet-700 hover:text-violet-900 focus-visible:rounded focus-visible:outline-2 focus-visible:outline-violet-600">
+                            <ArrowLeft size={14} aria-hidden="true" /> Volver al resumen
+                        </button>
+                    )}
+                    <h1 className="truncate text-xl font-semibold leading-tight text-slate-900">
+                        {activeSection === "overview" ? `Hola, ${user?.firstName || "equipo"}` : "Detalle de la operación"}
                     </h1>
-                    <p className="mt-1 text-sm text-gray-500">
-                        Atrasos, velocidad de entrega, finalización y posibles bloqueos.
+                    <p className="mt-0.5 truncate text-xs text-slate-500">
+                        {activeSection === "overview" ? "Vista general de producción y prioridades." : "Explora el trabajo, los clientes y el avance de cada área."}
                     </p>
                 </div>
-                <div className="flex items-center justify-between gap-3 sm:justify-end">
-                    <p className="text-xs font-medium text-gray-500" aria-live="polite">
+                <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                    <p className="hidden text-xs font-medium text-slate-500 sm:block" aria-live="polite">
                         Actualizado {formatGeneratedAt(data.generatedAt)}
                     </p>
                     <button
@@ -481,7 +355,7 @@ export function ManagerDashboard({
                         aria-label={isRefreshing ? "Actualizando dashboard" : "Actualizar dashboard"}
                         onClick={onRefresh}
                         disabled={isRefreshing}
-                        className="flex size-9 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-50 hover:text-gray-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-50"
+                        className="flex size-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600 disabled:cursor-wait disabled:opacity-50"
                     >
                         <RefreshCw
                             size={16}
@@ -500,66 +374,20 @@ export function ManagerDashboard({
                 </div>
             )}
 
-            <section
-                aria-label="Indicadores clave"
-                aria-busy={isRefreshing}
-                className={`grid gap-3 transition-opacity sm:grid-cols-2 xl:grid-cols-4 ${isRefreshing ? "opacity-60" : "opacity-100"}`}
-            >
-                {kpis.map((kpi) => {
-                    const Icon = kpi.icon;
-                    const interactiveView = kpi.detailView;
-                    const isInteractive = interactiveView !== undefined;
-                    const content = (
-                        <span className="flex h-full flex-col">
-                            <span className="flex items-center gap-2">
-                                <span className={`flex size-7 shrink-0 items-center justify-center rounded ${kpi.iconClass}`}>
-                                    <Icon size={15} strokeWidth={2} />
-                                </span>
-                                <span className="text-xs font-semibold leading-4 text-gray-600">
-                                    {kpi.label}
-                                </span>
-                            </span>
-                            <span className={`mt-3 block text-[1.75rem] font-semibold leading-none tracking-tight ${kpi.valueClass}`}>
-                                {kpi.value}
-                            </span>
-                            <span className={`mt-2 block text-xs leading-4 ${kpi.detailClass}`}>
-                                {kpi.detail}
-                            </span>
-                            {isInteractive && kpi.actionLabel && (
-                                <span className="mt-3 inline-flex items-center gap-1 self-start text-xs font-semibold text-blue-700">
-                                    {kpi.actionLabel}
-                                    <ArrowUpRight size={14} />
-                                </span>
-                            )}
-                        </span>
-                    );
-
-                    if (isInteractive) {
-                        return (
-                            <button
-                                key={kpi.label}
-                                type="button"
-                                onClick={() => {
-                                    if (interactiveView === "finalization") {
-                                        handleOpenFinalization();
-                                    } else if (interactiveView) {
-                                        setRiskView(interactiveView);
-                                    }
-                                }}
-                                className={`h-full rounded-md border border-l-[3px] border-gray-200 bg-white p-3.5 text-left shadow-sm transition hover:-translate-y-px hover:bg-gray-50/70 hover:shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 motion-reduce:transform-none ${kpi.accentClass}`}
-                            >
-                                {content}
-                            </button>
-                        );
-                    }
-
-                    return (
-                        <article key={kpi.label} className={`h-full rounded-md border border-l-[3px] border-gray-200 bg-white p-3.5 shadow-sm ${kpi.accentClass}`}>
-                            {content}
-                        </article>
-                    );
-                })}
-            </section>
+            {activeSection === "overview" && (
+                <DashboardOverview
+                    data={data}
+                    activeFilterCount={activeFilterCount}
+                    isRefreshing={isRefreshing}
+                    onOpenSection={setActiveSection}
+                    onOpenRisk={setRiskView}
+                    onOpenFinalization={handleOpenFinalization}
+                    onOpenUser={(userId) => {
+                        setExpandedUserId(userId);
+                        setActiveSection("team");
+                    }}
+                />
+            )}
 
             {riskView && (
                 <DashboardRiskDialog
@@ -595,7 +423,25 @@ export function ManagerDashboard({
                 />
             )}
 
-            {(data.unassignedTasks?.length ?? 0) + (data.unassignedSubTasks?.length ?? 0) > 0 && (
+            <div className={activeSection === "overview" ? "hidden" : "flex min-h-0 flex-1 flex-col gap-3"}>
+                <nav aria-label="Secciones del dashboard" className="flex shrink-0 gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-white p-1">
+                    {([
+                        ["attention", "Atención"], ["team", "Equipo"], ["clients", "Clientes"],
+                        ["projects", "Subproyectos"], ["flow", "Flujo"], ["history", "Histórico"]
+                    ] as const).map(([section, label]) => (
+                        <button key={section} type="button" onClick={() => setActiveSection(section)} aria-current={activeSection === section ? "true" : undefined} className={`shrink-0 rounded-md px-3 py-2 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-violet-600 ${activeSection === section ? "bg-violet-50 text-violet-800" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"}`}>
+                            {label}
+                        </button>
+                    ))}
+                </nav>
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-2">
+            {activeSection === "attention" && (
+                <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => setRiskView("overdue")} className="rounded-md border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-violet-600">Ver tareas atrasadas</button>
+                    <button type="button" onClick={() => setRiskView("bottlenecks")} className="rounded-md border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-50 focus-visible:outline-2 focus-visible:outline-violet-600">Ver cuellos de botella</button>
+                </div>
+            )}
+            {activeSection === "attention" && (data.unassignedTasks?.length ?? 0) + (data.unassignedSubTasks?.length ?? 0) > 0 && (
                 <section className="overflow-hidden rounded-lg border border-amber-200 bg-white shadow-sm">
                     <div className="border-b border-amber-100 bg-amber-50/70 px-5 py-4">
                         <SectionHeading
@@ -628,8 +474,8 @@ export function ManagerDashboard({
                 </section>
             )}
 
-            <div className="space-y-6">
-                <section className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+            <div className={activeSection === "team" || activeSection === "flow" ? "space-y-4" : "hidden"}>
+                <section className={activeSection === "team" ? "overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm" : "hidden"}>
                     <div className="flex flex-col gap-4 border-b border-gray-200 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
                         <SectionHeading
                             icon={UsersRound}
@@ -639,7 +485,7 @@ export function ManagerDashboard({
                         {data.workload.length > 0 && (
                             <div className="flex shrink-0 items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
                                 <span className="size-2 rounded-full bg-emerald-500" />
-                                {availablePeopleCount} de {data.workload.length} disponibles
+                                {availablePeopleCount} de {internalWorkload.length} disponibles
                             </div>
                         )}
                     </div>
@@ -962,7 +808,7 @@ export function ManagerDashboard({
                     </div>
                 </section>
 
-                <section className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
+                <section className={activeSection === "flow" ? "rounded-md border border-gray-200 bg-white p-5 shadow-sm" : "hidden"}>
                     <SectionHeading
                         icon={CircleGauge}
                         title="Distribución del flujo"
@@ -1000,7 +846,7 @@ export function ManagerDashboard({
                 </section>
             </div>
 
-            <section className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
+            <section className={activeSection === "clients" ? "rounded-md border border-gray-200 bg-white p-5 shadow-sm" : "hidden"}>
                     <SectionHeading
                         icon={UsersRound}
                         title="Clientes y avance"
@@ -1045,7 +891,7 @@ export function ManagerDashboard({
                     </div>
             </section>
 
-            <section className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
+            <section className={activeSection === "projects" ? "rounded-md border border-gray-200 bg-white p-5 shadow-sm" : "hidden"}>
                 <SectionHeading
                     icon={ListChecks}
                     title="Salud de subproyectos"
@@ -1092,7 +938,7 @@ export function ManagerDashboard({
                 </div>
             </section>
 
-            <section className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
+            <section className={activeSection === "history" ? "rounded-md border border-gray-200 bg-white p-5 shadow-sm" : "hidden"}>
                 <SectionHeading
                     icon={Clock3}
                     title="Analítica histórica"
@@ -1107,7 +953,7 @@ export function ManagerDashboard({
                 </div>
             </section>
 
-            <div className="grid gap-6 xl:grid-cols-3">
+            <div className={activeSection === "attention" ? "grid gap-4 xl:grid-cols-3" : "hidden"}>
                 <section className="rounded-md border border-gray-200 bg-white shadow-sm">
                     <div className="p-5">
                         <SectionHeading
@@ -1199,6 +1045,8 @@ export function ManagerDashboard({
                         ))}
                     </AlertList>
                 </section>
+            </div>
+                </div>
             </div>
         </div>
     );

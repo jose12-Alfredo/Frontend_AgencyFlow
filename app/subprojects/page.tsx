@@ -22,8 +22,7 @@ import {
     Trash2
 } from "lucide-react";
 import { RequireAuth } from "@/components/auth/RequireAuth";
-import { PROJECT_MANAGER_ROLES } from "@/lib/roles";
-import { isAdministrator } from "@/lib/roles";
+import { PROJECT_MANAGER_ROLES, hasPermission, isAdministrator } from "@/lib/roles";
 import { useAuth } from "@/context/AuthContext";
 import { AppShell } from "@/components/layout/AppShell";
 import { SubProjectDeleteDialog } from "@/components/subprojects/SubProjectDeleteDialog";
@@ -37,9 +36,8 @@ import { usersService } from "@/services/users.service";
 import { loadAllPages } from "@/services/pagination";
 import { Department } from "@/types/department.types";
 import { Project } from "@/types/project.types";
-import { SubProject } from "@/types/subproject.types";
+import { SubProject, SubProjectUserOption } from "@/types/subproject.types";
 import { TaskItem } from "@/types/task.types";
-import { User } from "@/types/user.types";
 
 function formatDate(value: string | null): string {
     if (!value) {
@@ -120,13 +118,14 @@ export default function SubProjectsPage() {
 function SubProjectsContent() {
     const { user } = useAuth();
     const canAdminister = isAdministrator(user?.roleName);
+    const canAssignSubProjects = hasPermission(user?.permissions, "subprojects.assign");
     const searchParams = useSearchParams();
     const projectId = searchParams.get("projectId") ?? "";
     const [subProjects, setSubProjects] = useState<SubProject[]>([]);
     const [tasks, setTasks] = useState<TaskItem[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
     const [departments, setDepartments] = useState<Department[]>([]);
-    const [users, setUsers] = useState<User[]>([]);
+    const [users, setUsers] = useState<SubProjectUserOption[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isFormOpen, setIsFormOpen] = useState(false);
@@ -146,7 +145,6 @@ function SubProjectsContent() {
                 visibleSubProjects,
                 loadedProjects,
                 loadedDepartments,
-                loadedUsers,
                 loadedTasks
             ] = await Promise.all([
                 loadAllPages((page, pageSize) => subProjectsService.getAll({
@@ -156,15 +154,26 @@ function SubProjectsContent() {
                 })),
                 loadAllPages((page, pageSize) => projectsService.getAll({ page, pageSize })),
                 canAdminister ? loadAllPages((page, pageSize) => departmentsService.getAll({ page, pageSize })) : Promise.resolve([] as Department[]),
-                canAdminister ? loadAllPages((page, pageSize) => usersService.getAll({ page, pageSize })) : Promise.resolve([] as User[]),
                 loadAllPages((page, pageSize) => tasksService.getAll({ page, pageSize }))
             ]);
+
+            const optionsProjectId = projectId || loadedProjects[0]?.id;
+            const formOptions = optionsProjectId && !canAdminister
+                ? await subProjectsService.getFormOptions(optionsProjectId)
+                : null;
+            const loadedUsers = canAdminister
+                ? await loadAllPages((page, pageSize) => usersService.getAll({ page, pageSize }))
+                : canAssignSubProjects
+                    ? formOptions?.users ?? []
+                    : [];
 
             const visibleSubProjectIds = new Set(visibleSubProjects.map((item) => item.id));
 
             setSubProjects(visibleSubProjects);
             setProjects(loadedProjects);
-            setDepartments(canAdminister ? loadedDepartments : Array.from(new Map(visibleSubProjects.map((item) => [item.departmentId, { id: item.departmentId, name: item.departmentName, description: null }])).values()));
+            setDepartments(canAdminister
+                ? loadedDepartments
+                : (formOptions?.departments ?? []).map(option => ({ ...option, description: null })));
             setUsers(loadedUsers);
             setTasks(loadedTasks.filter((task) => visibleSubProjectIds.has(task.subProjectId)));
         } catch (error) {
@@ -176,7 +185,7 @@ function SubProjectsContent() {
         } finally {
             setIsLoading(false);
         }
-    }, [canAdminister, projectId]);
+    }, [canAdminister, canAssignSubProjects, projectId]);
 
     const filteredProject = projects.find(
         (project) => project.id === projectId
@@ -427,7 +436,7 @@ function SubProjectsContent() {
                                             >
                                                 <td className="max-w-xs px-5 py-4">
                                                     <Link
-                                                        href={`/tasks?projectId=${subProject.projectId}&subProjectId=${subProject.id}`}
+                                                        href={`/subprojects/${subProject.id}`}
                                                         className="group flex items-start gap-2 text-sm font-semibold text-gray-900 hover:text-blue-700"
                                                     >
                                                         <span>{subProject.title}</span>

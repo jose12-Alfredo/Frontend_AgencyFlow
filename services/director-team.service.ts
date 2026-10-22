@@ -3,9 +3,11 @@ import { DepartmentUser } from "@/types/department-user.types";
 import { PagedResult } from "@/types/common.types";
 import { User } from "@/types/user.types";
 import { Role } from "@/types/role.types";
+import { JobPosition } from "@/types/job-position.types";
+import { UserRequest } from "@/types/user.types";
 
-export interface DirectorTeamMemberRequest {
-    firstName: string; lastName: string; phone: string | null; email: string | null; password: string; roleId: string; clientCompanyId: null; departmentId: string;
+export interface DirectorTeamMemberRequest extends UserRequest {
+    departmentId: string;
 }
 
 export interface ExistingTeamMemberCandidate {
@@ -18,6 +20,11 @@ export interface ExistingTeamMemberCandidate {
     belongsToOtherDepartments: boolean;
 }
 
+export interface ManagedDepartment {
+    id: string;
+    name: string;
+}
+
 interface ExistingTeamMemberParams {
     departmentId: string;
     search?: string;
@@ -28,8 +35,17 @@ interface ExistingTeamMemberParams {
 }
 
 export const directorTeamService = {
+    getDepartments(): Promise<ManagedDepartment[]> {
+        return apiFetch<ManagedDepartment[]>("/api/director/team-members/departments");
+    },
+    getMembers(departmentId: string): Promise<DepartmentUser[]> {
+        return apiFetch<DepartmentUser[]>(`/api/director/team-members/departments/${departmentId}/members`);
+    },
     getAllowedRoles(): Promise<Role[]> {
         return apiFetch<Role[]>("/api/director/team-members/roles");
+    },
+    getJobPositions(): Promise<JobPosition[]> {
+        return apiFetch<JobPosition[]>("/api/director/team-members/job-positions");
     },
     create(request: DirectorTeamMemberRequest): Promise<User> {
         return apiFetch<User>("/api/director/team-members", { method: "POST", body: JSON.stringify(request) });
@@ -43,5 +59,8 @@ export const directorTeamService = {
             method: "POST",
             body: JSON.stringify({ userId, departmentId })
         });
+    },
+    remove(membershipId: string): Promise<void> {
+        return apiFetch<void>(`/api/director/team-members/${membershipId}`, { method: "DELETE" });
     }
 };

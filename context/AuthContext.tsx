@@ -30,6 +30,8 @@ const AuthContext = createContext<AuthContextValue | undefined>(
     undefined
 );
 
+const PERMISSIONS_VERSION = 4;
+
 export function AuthProvider({
                                  children
                              }: {
@@ -50,7 +52,14 @@ export function AuthProvider({
 
         if (token && storedUser && !isTokenExpired(token)) {
             try {
-                setUser(JSON.parse(storedUser));
+                const parsedUser = JSON.parse(storedUser) as AuthUser;
+                if (!Array.isArray(parsedUser.permissions) ||
+                    parsedUser.permissionsVersion !== PERMISSIONS_VERSION) {
+                    localStorage.removeItem(AUTH_TOKEN_KEY);
+                    localStorage.removeItem(AUTH_USER_KEY);
+                } else {
+                    setUser(parsedUser);
+                }
             } catch {
                 localStorage.removeItem(AUTH_TOKEN_KEY);
                 localStorage.removeItem(AUTH_USER_KEY);
@@ -76,7 +85,11 @@ export function AuthProvider({
             lastName: response.lastName,
             email: response.email,
             roleName: response.roleName,
-            departments: response.departments
+            jobPositionId: response.jobPositionId,
+            jobPositionName: response.jobPositionName,
+            departments: response.departments,
+            permissions: response.permissions,
+            permissionsVersion: PERMISSIONS_VERSION
         };
 
         localStorage.setItem(

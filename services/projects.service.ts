@@ -6,7 +6,8 @@ import { PagedResult } from "@/types/common.types";
 import {
     Project,
     ProjectFull,
-    ProjectRequest
+    ProjectRequest,
+    ProjectResponsible
 } from "@/types/project.types";
 
 interface ProjectListParams {
@@ -15,6 +16,7 @@ interface ProjectListParams {
     titulo?: string;
     projectTypeId?: string;
     clientUserId?: string;
+    clientCompanyId?: string;
     startDateFrom?: string;
     startDateTo?: string;
 
@@ -45,6 +47,10 @@ export const projectsService = {
 
     getFull(id: string): Promise<ProjectFull> {
         return apiFetch<ProjectFull>(`${BASE_PATH}/${id}/full`);
+    },
+
+    getResponsibles(): Promise<ProjectResponsible[]> {
+        return apiFetch<ProjectResponsible[]>(`${BASE_PATH}/responsibles`);
     },
 
     create(request: ProjectRequest): Promise<Project> {

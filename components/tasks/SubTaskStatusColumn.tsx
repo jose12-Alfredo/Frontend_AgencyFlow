@@ -85,6 +85,31 @@ function formatDate(value: string | null): string {
     }).format(new Date(year, month - 1, day));
 }
 
+function SubTaskDetail({ detail }: { detail: string }) {
+    const parts = detail.split(/(https?:\/\/[^\s]+)/g);
+
+    return (
+        <div className="mt-1 text-xs leading-5">
+            <p className="font-semibold text-gray-700">Detalle:</p>
+            <p className="whitespace-pre-wrap break-words text-gray-500">
+                {parts.map((part, index) => part.startsWith("http://") || part.startsWith("https://") ? (
+                    <a
+                        key={`${part}-${index}`}
+                        href={part}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-900"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        {part}
+                    </a>
+                ) : part)}
+            </p>
+        </div>
+    );
+}
+
 function DraggableSubTaskCard({
     subTask,
     onOpen,
@@ -160,25 +185,19 @@ function DraggableSubTaskCard({
                     <Check size={14} strokeWidth={3} />
                 </button>}
 
-                <button
-                    type="button"
-                    onClick={onOpen}
-                    className="min-w-0 flex-1 text-left"
-                >
-                    <span
-                        className={`block text-sm font-semibold leading-5 ${
-                            isCompleted
-                                ? "text-gray-500 line-through"
-                                : "text-gray-900"
-                        }`}
-                    >
-                        {subTask.title}
-                    </span>
-                    {subTask.detail && (
-                        <span className="mt-1 line-clamp-2 block text-xs leading-5 text-gray-500">
-                            {subTask.detail}
+                <div className="min-w-0 flex-1 text-left">
+                    <button type="button" onClick={onOpen} className="block w-full text-left">
+                        <span
+                            className={`block text-sm font-semibold leading-5 ${
+                                isCompleted
+                                    ? "text-gray-500 line-through"
+                                    : "text-gray-900"
+                            }`}
+                        >
+                            {subTask.title}
                         </span>
-                    )}
+                    </button>
+                    {subTask.detail && <SubTaskDetail detail={subTask.detail} />}
                     {subTask.isOverdue && (
                         <span className="mt-2 flex w-fit items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700">
                             <CircleAlert size={13} />
@@ -190,7 +209,7 @@ function DraggableSubTaskCard({
                             Pausada
                         </span>
                     )}
-                </button>
+                </div>
 
                 <div className="flex shrink-0 items-center">
                     {canEdit && onEdit && <button

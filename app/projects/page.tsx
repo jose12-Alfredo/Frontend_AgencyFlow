@@ -21,7 +21,7 @@ import {
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { PROJECT_MANAGER_ROLES } from "@/lib/roles";
 import { useAuth } from "@/context/AuthContext";
-import { isAdministrator } from "@/lib/roles";
+import { hasPermission } from "@/lib/roles";
 import { AppShell } from "@/components/layout/AppShell";
 import { ProjectDeleteDialog } from "@/components/projects/ProjectDeleteDialog";
 import { ProjectFormModal } from "@/components/projects/ProjectFormModal";
@@ -30,13 +30,13 @@ import { projectsService } from "@/services/projects.service";
 import { subProjectsService } from "@/services/subprojects.service";
 import { tasksService } from "@/services/tasks.service";
 import { projectTypesService } from "@/services/project-types.service";
-import { usersService } from "@/services/users.service";
+import { clientCompaniesService } from "@/services/client-companies.service";
 import { loadAllPages } from "@/services/pagination";
-import { Project } from "@/types/project.types";
+import { Project, ProjectResponsible } from "@/types/project.types";
 import { ProjectType } from "@/types/project-type.types";
 import { SubProject } from "@/types/subproject.types";
 import { TaskItem } from "@/types/task.types";
-import { User } from "@/types/user.types";
+import { ClientCompany } from "@/types/client-company.types";
 
 function formatDate(value: string | null): string {
     if (!value) {
@@ -93,10 +93,17 @@ function getProjectSchedule(startDate: string, endDate: string | null): {
 
 export default function ProjectsPage() {
     const { user } = useAuth();
-    const canAdminister = isAdministrator(user?.roleName);
+    const hasLegacyDirectorProjectManagement =
+        user?.roleName === "Director" && user.permissionsVersion !== 3;
+    const canCreate = hasLegacyDirectorProjectManagement || hasPermission(user?.permissions, "projects.create");
+    const canUpdate = hasLegacyDirectorProjectManagement || hasPermission(user?.permissions, "projects.update");
+    const canDelete = hasLegacyDirectorProjectManagement || hasPermission(user?.permissions, "projects.delete");
+    const canViewClients = hasLegacyDirectorProjectManagement || hasPermission(user?.permissions, "client_companies.view");
+    const needsCatalogs = canCreate || canUpdate;
     const [projects, setProjects] = useState<Project[]>([]);
     const [projectTypes, setProjectTypes] = useState<ProjectType[]>([]);
-    const [clients, setClients] = useState<User[]>([]);
+    const [clients, setClients] = useState<ClientCompany[]>([]);
+    const [responsibles, setResponsibles] = useState<ProjectResponsible[]>([]);
     const [subProjects, setSubProjects] = useState<SubProject[]>([]);
     const [tasks, setTasks] = useState<TaskItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -112,11 +119,12 @@ export default function ProjectsPage() {
         setError(null);
 
         try {
-            const [loadedProjects, loadedProjectTypes, loadedClients, visibleSubProjects, loadedTasks] =
+            const [loadedProjects, loadedProjectTypes, loadedClients, loadedResponsibles, visibleSubProjects, loadedTasks] =
                 await Promise.all([
                     loadAllPages((page, pageSize) => projectsService.getAll({ page, pageSize })),
-                    canAdminister ? loadAllPages((page, pageSize) => projectTypesService.getAll({ page, pageSize })) : Promise.resolve([] as ProjectType[]),
-                    canAdminister ? loadAllPages((page, pageSize) => usersService.getClients({ page, pageSize })) : Promise.resolve([] as User[]),
+                    needsCatalogs ? loadAllPages((page, pageSize) => projectTypesService.getAll({ page, pageSize })) : Promise.resolve([] as ProjectType[]),
+                    needsCatalogs && canViewClients ? loadAllPages((page, pageSize) => clientCompaniesService.getAll({ page, pageSize })) : Promise.resolve([] as ClientCompany[]),
+                    needsCatalogs ? projectsService.getResponsibles() : Promise.resolve([] as ProjectResponsible[]),
                     loadAllPages((page, pageSize) => subProjectsService.getAll({ page, pageSize })),
                     loadAllPages((page, pageSize) => tasksService.getAll({ page, pageSize }))
                 ]);
@@ -126,6 +134,7 @@ export default function ProjectsPage() {
             setProjects(loadedProjects);
             setProjectTypes(loadedProjectTypes);
             setClients(loadedClients);
+            setResponsibles(loadedResponsibles);
             setSubProjects(visibleSubProjects);
             setTasks(loadedTasks.filter((task) => visibleSubProjectIds.has(task.subProjectId)));
         } catch (error) {
@@ -137,7 +146,7 @@ export default function ProjectsPage() {
         } finally {
             setIsLoading(false);
         }
-    }, [canAdminister]);
+    }, [canViewClients, needsCatalogs]);
 
     const projectProgressById = useMemo(() => {
         const tasksBySubProject = new Map<string, TaskItem[]>();
@@ -201,7 +210,7 @@ export default function ProjectsPage() {
     }, [loadData]);
 
     return (
-        <RequireAuth allowedRoles={PROJECT_MANAGER_ROLES}>
+        <RequireAuth allowedRoles={PROJECT_MANAGER_ROLES} allowedPermission="projects.view">
             <AppShell>
                 <div className="mb-6 flex items-start justify-between gap-4">
                     <div>
@@ -219,18 +228,27 @@ export default function ProjectsPage() {
                     </div>
 
                     <div className="flex shrink-0 items-center gap-2">
-                        {canAdminister && <button
-                            type="button"
-                            onClick={() => {
-                                setSelectedProject(null);
-                                setIsFormOpen(true);
-                            }}
-                            disabled={isLoading || projectTypes.length === 0}
-                            className="flex h-10 items-center gap-2 rounded-md bg-gray-900 px-4 text-sm font-semibold text-white transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                            <Plus size={18} />
-                            Nuevo proyecto
-                        </button>}
+                        {canCreate && (projectTypes.length === 0 && !isLoading
+                            ? <Link
+                                href="/project-types"
+                                title="Primero debe existir al menos un tipo de proyecto"
+                                className="flex h-10 items-center gap-2 rounded-md bg-amber-500 px-4 text-sm font-semibold text-white transition hover:bg-amber-600"
+                            >
+                                <Plus size={18} />
+                                Crear tipo de proyecto
+                            </Link>
+                            : <button
+                                type="button"
+                                onClick={() => {
+                                    setSelectedProject(null);
+                                    setIsFormOpen(true);
+                                }}
+                                disabled={isLoading}
+                                className="flex h-10 items-center gap-2 rounded-md bg-gray-900 px-4 text-sm font-semibold text-white transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                <Plus size={18} />
+                                Nuevo proyecto
+                            </button>)}
 
                         <button
                             type="button"
@@ -254,6 +272,15 @@ export default function ProjectsPage() {
                         className="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
                     >
                         {error}
+                    </div>
+                )}
+
+                {!isLoading && canCreate && projectTypes.length === 0 && (
+                    <div
+                        role="status"
+                        className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                    >
+                        No hay tipos de proyecto activos. Cree uno para poder registrar un proyecto nuevo.
                     </div>
                 )}
 
@@ -285,6 +312,10 @@ export default function ProjectsPage() {
                                     </th>
 
                                     <th className="px-5 py-3 text-xs font-semibold uppercase text-gray-500">
+                                        Responsable
+                                    </th>
+
+                                    <th className="px-5 py-3 text-xs font-semibold uppercase text-gray-500">
                                         Avance general
                                     </th>
 
@@ -306,7 +337,7 @@ export default function ProjectsPage() {
                                 {isLoading ? (
                                     <tr>
                                         <td
-                                            colSpan={7}
+                                            colSpan={8}
                                             className="px-5 py-10 text-center text-sm text-gray-500"
                                         >
                                             Cargando proyectos...
@@ -315,7 +346,7 @@ export default function ProjectsPage() {
                                 ) : projects.length === 0 ? (
                                     <tr>
                                         <td
-                                            colSpan={7}
+                                            colSpan={8}
                                             className="px-5 py-10 text-center text-sm text-gray-500"
                                         >
                                             No existen proyectos registrados.
@@ -328,10 +359,7 @@ export default function ProjectsPage() {
                                             project.startDate,
                                             project.endDate
                                         );
-                                        const clientName = [
-                                            project.clientUserFirstName,
-                                            project.clientUserLastName
-                                        ].filter(Boolean).join(" ");
+                                        const clientName = project.clientCompanyName ?? "";
 
                                         return (
                                             <tr
@@ -372,6 +400,18 @@ export default function ProjectsPage() {
                                                     </p>
                                                 </td>
 
+                                                <td className="px-5 py-4 text-sm text-gray-600">
+                                                    <p className="font-medium text-gray-800">
+                                                        {[project.responsibleUserFirstName, project.responsibleUserLastName]
+                                                            .filter(Boolean).join(" ") || "Sin responsable"}
+                                                    </p>
+                                                    {project.responsibleUserJobPositionName && (
+                                                        <p className="mt-1 text-xs text-gray-500">
+                                                            {project.responsibleUserJobPositionName}
+                                                        </p>
+                                                    )}
+                                                </td>
+
                                                 <td className="min-w-52 px-5 py-4">
                                                     {progress?.percentage === null ? <span className="text-sm text-gray-500">Sin subproyectos</span> : <div><div className="mb-2 flex justify-between text-xs text-gray-500"><span>{progress?.completed} de {progress?.total} subproyectos</span><strong className="text-gray-800">{progress?.percentage}%</strong></div><div className="h-1.5 overflow-hidden rounded-full bg-gray-100"><div className={`h-full rounded-full ${progress?.percentage === 100 ? "bg-emerald-600" : "bg-blue-600"}`} style={{ width: `${progress?.percentage ?? 0}%` }} /></div></div>}
                                                 </td>
@@ -390,7 +430,7 @@ export default function ProjectsPage() {
 
                                                 <td className="px-5 py-4 text-right">
                                                     <div className="flex items-center justify-end gap-1">
-                                                        {canAdminister && <button
+                                                        {canUpdate && <button
                                                             type="button"
                                                             title="Editar proyecto"
                                                             aria-label={`Editar ${project.title}`}
@@ -407,7 +447,7 @@ export default function ProjectsPage() {
                                                             <Pencil size={18} />
                                                         </button>}
 
-                                                        {canAdminister && <button
+                                                        {canDelete && <button
                                                             type="button"
                                                             title="Eliminar proyecto"
                                                             aria-label={`Eliminar ${project.title}`}
@@ -436,6 +476,7 @@ export default function ProjectsPage() {
                         project={selectedProject}
                         projectTypes={projectTypes}
                         clients={clients}
+                        responsibles={responsibles}
                         onClose={() => {
                             setIsFormOpen(false);
                             setSelectedProject(null);

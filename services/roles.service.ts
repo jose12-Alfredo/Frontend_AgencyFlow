@@ -5,6 +5,8 @@ import {
 import { PagedResult } from "@/types/common.types";
 import {
     Role,
+    RolePermissionAudit,
+    RolePermissionSummary,
     RoleRequest
 } from "@/types/role.types";
 
@@ -57,6 +59,34 @@ export const rolesService = {
                 method: "PUT",
                 body: JSON.stringify(request)
             }
+        );
+    },
+
+    getPermissions(id: string): Promise<RolePermissionSummary> {
+        return apiFetch<RolePermissionSummary>(
+            `${BASE_PATH}/${id}/permissions`
+        );
+    },
+
+    updatePermissions(
+        id: string,
+        permissionIds: string[]
+    ): Promise<RolePermissionSummary> {
+        return apiFetch<RolePermissionSummary>(
+            `${BASE_PATH}/${id}/permissions`,
+            {
+                method: "PUT",
+                body: JSON.stringify({ permissionIds })
+            }
+        );
+    },
+
+    getPermissionAudit(
+        id: string,
+        limit = 100
+    ): Promise<RolePermissionAudit[]> {
+        return apiFetch<RolePermissionAudit[]>(
+            `${BASE_PATH}/${id}/permissions/audit${buildQuery({ limit })}`
         );
     },
 

@@ -8,19 +8,19 @@ import { X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/services/api";
 import { subProjectsService } from "@/services/subprojects.service";
-import { Department } from "@/types/department.types";
 import { Project } from "@/types/project.types";
 import {
     SUBPROJECT_STATUSES,
-    SubProject
+    SubProject,
+    SubProjectDepartmentOption,
+    SubProjectUserOption
 } from "@/types/subproject.types";
-import { User } from "@/types/user.types";
 
 interface SubProjectFormModalProps {
     subProject: SubProject | null;
     projects: Project[];
-    departments: Department[];
-    users: User[];
+    departments: SubProjectDepartmentOption[];
+    users: SubProjectUserOption[];
     onClose: () => void;
     onSaved: () => Promise<void>;
 }
@@ -45,7 +45,7 @@ export function SubProjectFormModal({
         subProject?.status ?? "Pendiente"
     );
     const [projectId, setProjectId] = useState(
-        subProject?.projectId ?? ""
+        subProject?.projectId ?? (projects.length === 1 ? projects[0].id : "")
     );
     const [departmentId, setDepartmentId] = useState(
         subProject?.departmentId ?? ""

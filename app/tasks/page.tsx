@@ -11,10 +11,10 @@ import {
 import { useSearchParams } from "next/navigation";
 import { CircleAlert, ClipboardList, LayoutGrid, List, Plus, RefreshCw, Search } from "lucide-react";
 import { RequireAuth } from "@/components/auth/RequireAuth";
-import { PROJECT_MANAGER_ROLES } from "@/lib/roles";
-import { isAdministrator } from "@/lib/roles";
+import { PROJECT_MANAGER_ROLES, hasPermission, isAdministrator } from "@/lib/roles";
 import { useAuth } from "@/context/AuthContext";
 import { AppShell } from "@/components/layout/AppShell";
+import { WorkHierarchyBreadcrumbs } from "@/components/navigation/WorkHierarchyBreadcrumbs";
 import { TaskDeleteDialog } from "@/components/tasks/TaskDeleteDialog";
 import { TaskFormModal } from "@/components/tasks/TaskFormModal";
 import { TaskKanbanColumn } from "@/components/tasks/TaskKanbanColumn";
@@ -26,8 +26,10 @@ import { subProjectsService } from "@/services/subprojects.service";
 import { tasksService } from "@/services/tasks.service";
 import { usersService } from "@/services/users.service";
 import { departmentUsersService } from "@/services/department-users.service";
+import { directorTeamService } from "@/services/director-team.service";
 import { loadAllPages } from "@/services/pagination";
 import {
+    authUserToAssignableUser,
     getAssignableUsers,
     membershipsToAssignableUsers
 } from "@/lib/assignment";
@@ -96,6 +98,9 @@ export default function TasksPage() {
 function TasksContent() {
     const { user } = useAuth();
     const canAdminister = isAdministrator(user?.roleName);
+    const canViewUsers = hasPermission(user?.permissions, "users.view");
+    const canViewMemberships = hasPermission(user?.permissions, "department_memberships.view");
+    const canAssignTasks = hasPermission(user?.permissions, "tasks.assign");
     const searchParams = useSearchParams();
     const initialized = useRef(false);
     const [clients, setClients] = useState<ClientCompany[]>([]);
@@ -106,6 +111,7 @@ function TasksContent() {
     const [clientCompanyId, setClientCompanyId] = useState(ALL);
     const [projectId, setProjectId] = useState(ALL);
     const [subProjectId, setSubProjectId] = useState(ALL);
+    const [assignedUserId, setAssignedUserId] = useState(ALL);
     const [search, setSearch] = useState("");
     const [viewMode, setViewMode] = useState<"board" | "list">("board");
     const [isCatalogLoading, setIsCatalogLoading] = useState(true);
@@ -129,13 +135,53 @@ function TasksContent() {
                     loadAllPages((page, pageSize) => subProjectsService.getAll({ page, pageSize }))
                 ]);
 
-            const loadedUsers: User[] = canAdminister
-                ? await loadAllPages((page, pageSize) => usersService.getAll({ page, pageSize }))
-                : membershipsToAssignableUsers(
+            let loadedUsers: User[];
+
+            if (canViewUsers) {
+                loadedUsers = await loadAllPages((page, pageSize) =>
+                    usersService.getAll({ page, pageSize })
+                );
+            } else if (user?.roleName === "Director") {
+                const managedDepartments = await directorTeamService.getDepartments();
+                const memberships = (await Promise.all(
+                    managedDepartments.map((department) =>
+                        directorTeamService.getMembers(department.id)
+                    )
+                )).flat();
+                loadedUsers = membershipsToAssignableUsers(memberships);
+            } else if (canViewMemberships) {
+                loadedUsers = membershipsToAssignableUsers(
                     await loadAllPages((page, pageSize) =>
                         departmentUsersService.getAll({ page, pageSize })
                     )
                 );
+            } else if (canAssignTasks && visibleSubProjects.length > 0) {
+                const projectIds = Array.from(new Set(
+                    visibleSubProjects.map((subProject) => subProject.projectId)
+                ));
+                const projectOptions = await Promise.all(
+                    projectIds.map((visibleProjectId) =>
+                        subProjectsService.getFormOptions(visibleProjectId)
+                    )
+                );
+                loadedUsers = Array.from(new Map(
+                    projectOptions.flatMap((options) => options.users).map(option => [option.id, {
+                        id: option.id,
+                        firstName: option.firstName,
+                        lastName: option.lastName,
+                        phone: null,
+                        email: null,
+                        roleId: "",
+                        roleName: "Usuario interno",
+                        jobPositionId: null,
+                        jobPositionName: null,
+                        clientCompanyId: null,
+                        clientCompanyName: null
+                    } as User])
+                ).values());
+            } else {
+                loadedUsers = user ? [authUserToAssignableUser(user)] : [];
+            }
             const visibleProjectIds = new Set(
                 visibleSubProjects.map((subProject) => subProject.projectId)
             );
@@ -166,6 +212,8 @@ function TasksContent() {
                     searchParams.get("subProjectId") ?? ALL;
                 const requestedClientId =
                     searchParams.get("clientCompanyId") ?? ALL;
+                const requestedAssignedUserId =
+                    searchParams.get("assignedUserId") ?? ALL;
                 const requestedSubProject = visibleSubProjects.find(
                     (subProject) => subProject.id === requestedSubProjectId
                 );
@@ -201,6 +249,12 @@ function TasksContent() {
                 setSubProjectId(
                     requestedSubProjectExists ? requestedSubProjectId : ALL
                 );
+                setAssignedUserId(
+                    requestedAssignedUserId === ALL ||
+                    loadedUsers.some((loadedUser) => loadedUser.id === requestedAssignedUserId)
+                        ? requestedAssignedUserId
+                        : ALL
+                );
                 initialized.current = true;
             }
         } catch (loadError) {
@@ -212,7 +266,7 @@ function TasksContent() {
         } finally {
             setIsCatalogLoading(false);
         }
-    }, [canAdminister, searchParams]);
+    }, [canAdminister, canAssignTasks, canViewMemberships, canViewUsers, searchParams, user]);
 
     const loadTasks = useCallback(async () => {
         if (!initialized.current) {
@@ -250,7 +304,35 @@ function TasksContent() {
                 ...remainingPages.flatMap((page) => page.items)
             ];
             const allowedSubProjectIds = new Set(subProjects.map((subProject) => subProject.id));
-            setTasks(canAdminister ? loadedTasks : loadedTasks.filter((task) => allowedSubProjectIds.has(task.subProjectId)));
+            const visibleTasks = canAdminister
+                ? loadedTasks
+                : loadedTasks.filter((task) => allowedSubProjectIds.has(task.subProjectId));
+            setTasks(visibleTasks);
+            setUsers((currentUsers) => {
+                const responsibleUsers = new Map(
+                    currentUsers.map((currentUser) => [currentUser.id, currentUser])
+                );
+
+                visibleTasks.forEach((task) => {
+                    if (!task.assignedUserId) return;
+
+                    responsibleUsers.set(task.assignedUserId, {
+                        id: task.assignedUserId,
+                        firstName: task.assignedUserFirstName ?? "Usuario",
+                        lastName: task.assignedUserLastName ?? "",
+                        phone: null,
+                        email: null,
+                        roleId: "",
+                        roleName: "Usuario interno",
+                        jobPositionId: null,
+                        jobPositionName: null,
+                        clientCompanyId: null,
+                        clientCompanyName: null
+                    });
+                });
+
+                return Array.from(responsibleUsers.values());
+            });
         } catch (loadError) {
             setError(
                 loadError instanceof ApiError
@@ -295,11 +377,55 @@ function TasksContent() {
     const selectedProject = projects.find(
         (project) => projectId !== ALL && project.id === projectId
     );
+    const selectedSubProject = visibleSubProjects.find(
+        (subProject) => subProjectId !== ALL && subProject.id === subProjectId
+    );
+    const assignableUsers = useMemo(
+        () => getAssignableUsers(users).sort((first, second) =>
+            `${first.firstName} ${first.lastName}`.localeCompare(
+                `${second.firstName} ${second.lastName}`,
+                "es"
+            )
+        ),
+        [users]
+    );
+    const responsibleOptions = useMemo(() => {
+        const responsibleUsers = new Map<string, User>();
+
+        tasks.forEach((task) => {
+            if (!task.assignedUserId) return;
+
+            responsibleUsers.set(task.assignedUserId, {
+                id: task.assignedUserId,
+                firstName: task.assignedUserFirstName ?? "Usuario",
+                lastName: task.assignedUserLastName ?? "",
+                phone: null,
+                email: null,
+                roleId: "",
+                roleName: "Usuario interno",
+                jobPositionId: null,
+                jobPositionName: null,
+                clientCompanyId: null,
+                clientCompanyName: null
+            });
+        });
+
+        return Array.from(responsibleUsers.values()).sort((first, second) =>
+            `${first.firstName} ${first.lastName}`.localeCompare(
+                `${second.firstName} ${second.lastName}`,
+                "es"
+            )
+        );
+    }, [tasks]);
+    const selectedAssignedUser = responsibleOptions.find(
+        (responsibleUser) => assignedUserId !== ALL && responsibleUser.id === assignedUserId
+    );
 
     function updateUrl(
         nextClientId: string,
         nextProjectId: string,
-        nextSubProjectId: string
+        nextSubProjectId: string,
+        nextAssignedUserId: string = assignedUserId
     ) {
         const params = new URLSearchParams();
         if (nextClientId !== ALL) {
@@ -311,6 +437,9 @@ function TasksContent() {
         if (nextSubProjectId !== ALL) {
             params.set("subProjectId", nextSubProjectId);
         }
+        if (nextAssignedUserId !== ALL) {
+            params.set("assignedUserId", nextAssignedUserId);
+        }
         window.history.replaceState(null, "", `/tasks?${params.toString()}`);
     }
 
@@ -318,32 +447,46 @@ function TasksContent() {
         setClientCompanyId(nextClientId);
         setProjectId(ALL);
         setSubProjectId(ALL);
-        updateUrl(nextClientId, ALL, ALL);
+        setAssignedUserId(ALL);
+        updateUrl(nextClientId, ALL, ALL, ALL);
     }
 
     function handleProjectChange(nextProjectId: string) {
         setProjectId(nextProjectId);
         setSubProjectId(ALL);
-        updateUrl(clientCompanyId, nextProjectId, ALL);
+        setAssignedUserId(ALL);
+        updateUrl(clientCompanyId, nextProjectId, ALL, ALL);
     }
 
     function handleSubProjectChange(nextSubProjectId: string) {
         setSubProjectId(nextSubProjectId);
-        updateUrl(clientCompanyId, projectId, nextSubProjectId);
+        setAssignedUserId(ALL);
+        updateUrl(clientCompanyId, projectId, nextSubProjectId, ALL);
+    }
+
+    function handleAssignedUserChange(nextAssignedUserId: string) {
+        setAssignedUserId(nextAssignedUserId);
+        updateUrl(clientCompanyId, projectId, subProjectId, nextAssignedUserId);
     }
 
     const isLoading = isCatalogLoading || isTasksLoading;
+    const tasksForResponsible = useMemo(
+        () => assignedUserId === ALL
+            ? tasks
+            : tasks.filter((task) => task.assignedUserId === assignedUserId),
+        [assignedUserId, tasks]
+    );
     const taskKpis = useMemo(
         () => TASK_COLUMNS.map((column) => ({
             title: column.title,
-            count: tasks.filter((task) => column.matches(task.status)).length
+            count: tasksForResponsible.filter((task) => column.matches(task.status)).length
         })),
-        [tasks]
+        [tasksForResponsible]
     );
     const overdueTaskCount = useMemo(() => {
         const today = new Date().toISOString().slice(0, 10);
 
-        return tasks.filter((task) =>
+        return tasksForResponsible.filter((task) =>
             Boolean(
                 task.endDate &&
                 task.endDate < today &&
@@ -351,15 +494,15 @@ function TasksContent() {
                 task.status !== "Completada"
             )
         ).length;
-    }, [tasks]);
+    }, [tasksForResponsible]);
     const filteredTasks = useMemo(() => {
         const term = search.trim().toLowerCase();
 
         if (!term) {
-            return tasks;
+            return tasksForResponsible;
         }
 
-        return tasks.filter((task) => [
+        return tasksForResponsible.filter((task) => [
             task.title,
             task.detail,
             task.clientCompanyName,
@@ -371,13 +514,21 @@ function TasksContent() {
                 .filter(Boolean)
                 .join(" ")
         ].some((value) => value?.toLowerCase().includes(term)));
-    }, [search, tasks]);
+    }, [search, tasksForResponsible]);
 
     return (
         <RequireAuth allowedRoles={PROJECT_MANAGER_ROLES}>
             <AppShell>
                 <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
                     <div>
+                        {selectedProject && selectedSubProject && (
+                            <div className="mb-3"><WorkHierarchyBreadcrumbs items={[
+                                { type: "Cliente", label: selectedProject.clientCompanyName ?? "Sin empresa cliente", href: selectedProject.clientCompanyId ? `/client-companies/${selectedProject.clientCompanyId}` : undefined },
+                                { type: "Proyecto", label: selectedProject.title, href: `/projects/${selectedProject.id}` },
+                                { type: "Subproyecto", label: selectedSubProject.title, href: `/subprojects/${selectedSubProject.id}` },
+                                { type: "Tarea", label: "Todas las tareas" }
+                            ]} /></div>
+                        )}
                         <p className="text-sm font-medium text-blue-600">Control de producción</p>
                         <h1 className="mt-1 text-2xl font-semibold text-gray-950">Tareas</h1>
                         <p className="mt-2 text-sm text-gray-600">
@@ -457,7 +608,7 @@ function TasksContent() {
                 </section>
 
                 <section className="mb-5 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                    <div className="grid gap-4 md:grid-cols-3">
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                         <div>
                             <label htmlFor="task-client" className="mb-1.5 block text-xs font-semibold uppercase text-gray-500">
                                 Cliente
@@ -511,6 +662,25 @@ function TasksContent() {
                                 ))}
                             </select>
                         </div>
+
+                        <div>
+                            <label htmlFor="task-assignee" className="mb-1.5 block text-xs font-semibold uppercase text-gray-500">
+                                Responsable
+                            </label>
+                            <select
+                                id="task-assignee"
+                                value={assignedUserId}
+                                onChange={(event) => handleAssignedUserChange(event.target.value)}
+                                className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                            >
+                                <option value={ALL}>Todos los responsables</option>
+                                {responsibleOptions.map((responsibleUser) => (
+                                    <option key={responsibleUser.id} value={responsibleUser.id}>
+                                        {responsibleUser.firstName} {responsibleUser.lastName}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
 
                     <label className="relative mt-4 block">
@@ -538,6 +708,10 @@ function TasksContent() {
                             {subProjectId === ALL
                                 ? "Todos los subproyectos"
                                 : visibleSubProjects.find((item) => item.id === subProjectId)?.title}
+                            <span className="px-2 text-gray-300">/</span>
+                            {selectedAssignedUser
+                                ? `${selectedAssignedUser.firstName} ${selectedAssignedUser.lastName}`
+                                : "Todos los responsables"}
                         </p>
                         <span className="font-semibold text-gray-700">
                             {filteredTasks.length} {filteredTasks.length === 1 ? "tarea" : "tareas"}
@@ -580,7 +754,7 @@ function TasksContent() {
                     <TaskFormModal
                         task={taskToEdit}
                         subProjects={visibleSubProjects}
-                        users={getAssignableUsers(users)}
+                        users={assignableUsers}
                         initialSubProjectId={
                             subProjectId === ALL ? "" : subProjectId
                         }
